@@ -104,6 +104,7 @@ export class PulseProjector {
     this.cooldown = 0.2;
     this.lensMaterial.color.setHex(this.profile.color);
     this.lensMaterial.emissive.setHex(this.profile.color);
+    this.rebuildViewModel();
     this.events.onAmmoChanged(this.ammo, this.capacity);
     this.publishWeapon();
     this.events.onToast('EQUIPPED: ' + this.profile.name);
@@ -127,6 +128,7 @@ export class PulseProjector {
     this.cooldown = 0.2;
     this.lensMaterial.color.setHex(this.profile.color);
     this.lensMaterial.emissive.setHex(this.profile.color);
+    this.rebuildViewModel();
     this.events.onAmmoChanged(this.ammo, this.capacity);
     this.publishWeapon();
     this.events.onToast('LOADOUT CONFIGURATION APPLIED');
@@ -202,22 +204,55 @@ export class PulseProjector {
   }
 
   private createViewModel(): void {
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x303a40, metalness: 0.8, roughness: 0.28 });
-    const trimMaterial = new THREE.MeshStandardMaterial({ color: 0xc5a56a, metalness: 0.55, roughness: 0.3 });
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.16, 0.48), bodyMaterial);
-    this.model.add(housing);
-    const emitter = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.12, 16), trimMaterial);
-    emitter.rotation.x = Math.PI / 2;
-    emitter.position.set(0, 0.015, -0.27);
-    this.model.add(emitter);
-    const lens = new THREE.Mesh(new THREE.SphereGeometry(0.055, 12, 10), this.lensMaterial);
-    lens.position.set(0, 0.015, -0.34);
-    this.model.add(lens);
-    const side = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.1, 0.22), trimMaterial);
-    side.position.set(0.115, -0.025, 0.02);
-    this.model.add(side);
-    this.model.position.set(0.34, -0.29, -0.62);
+    this.rebuildViewModel();
     this.camera.add(this.model);
+  }
+
+  private rebuildViewModel(): void {
+    while (this.model.children.length) {
+      const child = this.model.children[0];
+      this.model.remove(child);
+      child.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach((material) => { if (material !== this.lensMaterial) material.dispose(); });
+        }
+      });
+    }
+    const body = new THREE.MeshStandardMaterial({ color: 0x303a40, metalness: 0.82, roughness: 0.27 });
+    const trim = new THREE.MeshStandardMaterial({ color: 0xc5a56a, metalness: 0.62, roughness: 0.3 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x151d22, metalness: 0.65, roughness: 0.38 });
+    const add = (geometry: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number): THREE.Mesh => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(x, y, z); mesh.castShadow = true; this.model.add(mesh); return mesh;
+    };
+    if (this.loadout.slot === 1) {
+      add(new THREE.BoxGeometry(0.2, 0.17, 0.46), body, 0, 0, 0);
+      add(new THREE.BoxGeometry(0.13, 0.12, 0.22), dark, 0, -0.13, 0.09);
+      add(new THREE.CylinderGeometry(0.065, 0.075, 0.16, 16), trim, 0, 0.015, -0.29).rotation.x = Math.PI / 2;
+      add(new THREE.SphereGeometry(0.055, 12, 10), this.lensMaterial, 0, 0.015, -0.36);
+      add(new THREE.BoxGeometry(0.045, 0.1, 0.25), trim, 0.12, -0.025, 0.02);
+    } else if (this.loadout.slot === 2) {
+      add(new THREE.BoxGeometry(0.25, 0.19, 0.5), body, 0, 0, 0.01);
+      for (const x of [-0.075, 0.075]) {
+        add(new THREE.CylinderGeometry(0.045, 0.052, 0.46, 12), dark, x, 0.025, -0.22).rotation.x = Math.PI / 2;
+        add(new THREE.TorusGeometry(0.052, 0.012, 6, 12), trim, x, 0.025, -0.45).rotation.x = Math.PI / 2;
+      }
+      add(new THREE.BoxGeometry(0.1, 0.1, 0.17), trim, 0, 0.13, -0.04);
+      add(new THREE.SphereGeometry(0.045, 10, 8), this.lensMaterial, 0, 0.14, -0.13);
+      add(new THREE.BoxGeometry(0.14, 0.12, 0.2), dark, 0, -0.15, 0.08);
+    } else {
+      add(new THREE.BoxGeometry(0.3, 0.23, 0.43), body, 0, 0, 0.04);
+      add(new THREE.BoxGeometry(0.24, 0.13, 0.24), trim, 0, 0.11, -0.12);
+      add(new THREE.CylinderGeometry(0.12, 0.14, 0.3, 16), dark, 0, 0.015, -0.31).rotation.x = Math.PI / 2;
+      add(new THREE.TorusGeometry(0.13, 0.025, 8, 18), this.lensMaterial, 0, 0.015, -0.47).rotation.x = Math.PI / 2;
+      for (const x of [-0.19, 0.19]) add(new THREE.BoxGeometry(0.07, 0.18, 0.32), trim, x, -0.01, -0.03);
+      add(new THREE.BoxGeometry(0.15, 0.15, 0.2), dark, 0, -0.18, 0.09);
+    }
+    add(new THREE.BoxGeometry(0.12, 0.045, 0.13), dark, 0, 0.15, 0.02);
+    add(new THREE.BoxGeometry(0.1, 0.012, 0.1), this.lensMaterial, 0, 0.19, 0.02);
+    this.model.position.set(0.34, -0.29, -0.62);
   }
 
   private drawPulse(end: THREE.Vector3, color: number): void {

@@ -9,6 +9,7 @@ import { MissionDirector, type MissionSnapshot } from './MissionDirector';
 import { PulseProjector, type WeaponLoadout } from './Weapon';
 import { HUD } from './HUD';
 import { CombatSystem } from './CombatSystem';
+import { Ordnance } from './Ordnance';
 
 export class Game {
   private readonly root: HTMLDivElement;
@@ -22,6 +23,7 @@ export class Game {
   private weapon?: PulseProjector;
   private hud?: HUD;
   private combat?: CombatSystem;
+  private ordnance?: Ordnance;
   private mission?: MissionDirector;
   private readonly squadOffsets = [
     new THREE.Vector3(-2, 0, -3), new THREE.Vector3(2, 0, -3),
@@ -77,6 +79,7 @@ export class Game {
     this.player?.controls.removeEventListener('unlock', this.onUnlock);
     this.player?.dispose();
     this.weapon?.dispose();
+    this.ordnance?.dispose();
     this.hud?.dispose();
     this.combat?.dispose();
     if (this.scene) this.drones.forEach((drone) => drone.dispose(this.scene!));
@@ -97,6 +100,7 @@ export class Game {
           <div class="objective"><div class="objective-kicker" id="mission-kicker">MISSION 01 // WAVE 1 OF 3</div><div class="objective-text" id="mission-objective">Tag all 6 squad units to advance. Complete all three waves.</div></div>
           <div class="center-reticle"></div>
           <div class="toast" id="toast"></div>
+          <div class="ordnance-readout" id="ordnance-readout">PULSE GRENADES 03 <span>//</span> ROCKET CELLS 03</div>
           <div class="hud-bottom">
             <div class="panel"><div class="panel-label">VITALS</div><div class="panel-value health-value"><span id="health-value">100</span><small> / 100</small></div></div>
             <div class="panel" style="text-align:right"><div class="panel-label">EQUIPPED</div><div class="weapon-name" id="weapon-name">PULSE PROJECTOR</div><div class="weapon-note" id="weapon-note">BALANCED ENERGY CELL</div><div class="panel-value" id="ammo-value">24 / 24</div></div>
@@ -110,7 +114,7 @@ export class Game {
             <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
             <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
             <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
-            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 EQUIP · R RECHARGE · ESC PAUSE</div>
+            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 EQUIP · G GRENADE · Q ROCKET · R RECHARGE · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
@@ -220,6 +224,15 @@ export class Game {
       onWeaponChanged: (name, note) => this.hud?.setWeapon(name, note)
     });
 
+    this.ordnance = new Ordnance(this.scene, this.camera, this.drones, {
+      onScore: (amount) => { this.score += amount; this.hud?.setScore(this.score); this.mission?.targetTagged(); },
+      onToast: (message) => this.hud?.showToast(message),
+      onAmmo: (grenades, rockets) => {
+        const readout = this.root.querySelector<HTMLElement>('#ordnance-readout');
+        if (readout) readout.innerHTML = 'PULSE GRENADES ' + String(grenades).padStart(2, '0') + ' <span>//</span> ROCKET CELLS ' + String(rockets).padStart(2, '0');
+      }
+    });
+
     this.combat = new CombatSystem(this.scene, this.player, this.drones, {
       onHealthChanged: (health) => this.hud?.setHealth(health),
       onToast: (message) => this.hud?.showToast(message),
@@ -244,6 +257,7 @@ export class Game {
     });
     this.root.querySelector<HTMLButtonElement>('#replay-mission')?.addEventListener('click', () => {
       this.mission?.reset();
+      this.ordnance?.reset();
       this.score = 0;
       this.hud?.setScore(0);
       this.missionOverlay!.style.display = 'none';
@@ -252,7 +266,9 @@ export class Game {
     });
     this.root.querySelector<HTMLButtonElement>('#respawn-button')?.addEventListener('click', () => {
       this.combat?.respawn();
+      this.ordnance?.reset();
       this.mission?.reset();
+      this.ordnance?.reset();
       this.score = 0;
       this.hud?.setScore(0);
       this.defeated = false;
@@ -292,6 +308,7 @@ export class Game {
 
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
+      this.ordnance?.update(delta);
       this.combat?.update(delta, 1 + (this.missionWave - 1) * 0.22);
       const playerPosition = this.player.position;
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
@@ -415,7 +432,10 @@ export class Game {
 
   private onGameKeyDown = (event: KeyboardEvent): void => {
     if (!this.started || !this.player?.controls.isLocked) return;
+    if (event.repeat) return;
     if (event.code === 'KeyR') this.weapon?.reload();
+    if (event.code === 'KeyG') this.ordnance?.throwGrenade();
+    if (event.code === 'KeyQ') this.ordnance?.launchRocket();
     if (event.code === 'Digit1') this.weapon?.selectWeapon(1);
     if (event.code === 'Digit2') this.weapon?.selectWeapon(2);
     if (event.code === 'Digit3') this.weapon?.selectWeapon(3);

@@ -185,3 +185,12 @@ canvas { display: block; width: 100%; height: 100%; }
   backdrop-filter: blur(5px);
 }
 .objective-kicker { font-weight: 600; }
+
+.ordnance-readout {
+  position: absolute; right: 28px; top: 105px; padding: 10px 13px;
+  color: #d6dde1; background: rgba(7,13,17,.72);
+  border: 1px solid rgba(190,205,214,.18); backdrop-filter: blur(5px);
+  font-size: 9px; letter-spacing: 1.1px; text-align: right;
+}
+.ordnance-readout span { color: #c5a56a; padding: 0 5px; }
+@media (max-width: 600px) { .ordnance-readout { right: 14px; top: 84px; font-size: 8px; } }
