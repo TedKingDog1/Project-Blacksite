@@ -8,6 +8,14 @@ export interface WeaponEvents {
   onWeaponChanged: (name: string, note: string) => void;
 }
 
+export interface WeaponLoadout {
+  slot: number;
+  optic: 'reflex' | 'precision';
+  capacitor: 'standard' | 'extended';
+  stabilizer: boolean;
+  fullAuto: boolean;
+}
+
 interface WeaponProfile {
   name: string;
   note: string;
@@ -26,6 +34,10 @@ const PROFILES: WeaponProfile[] = [
   { name: 'NOVA EMITTER', note: 'WIDE-ANGLE ENERGY BURST', capacity: 8, cooldown: 0.62, reloadTime: 1.6, rays: 5, spread: 0.045, color: 0xe7a2ef, score: 100 }
 ];
 
+const DEFAULT_LOADOUT: WeaponLoadout = {
+  slot: 1, optic: 'reflex', capacitor: 'standard', stabilizer: false, fullAuto: false
+};
+
 export class PulseProjector {
   private readonly camera: THREE.PerspectiveCamera;
   private readonly scene: THREE.Scene;
@@ -35,11 +47,13 @@ export class PulseProjector {
   private readonly model = new THREE.Group();
   private readonly lensMaterial: THREE.MeshStandardMaterial;
   private readonly tracerMaterials = new Map<number, THREE.LineBasicMaterial>();
-  private weaponIndex = 0;
+  private loadout: WeaponLoadout = { ...DEFAULT_LOADOUT };
   private ammo = PROFILES[0].capacity;
   private cooldown = 0;
   private reloadTimer = 0;
   private reloading = false;
+  private aiming = false;
+  private triggerHeld = false;
 
   constructor(camera: THREE.PerspectiveCamera, scene: THREE.Scene, targets: TrainingDrone[], events: WeaponEvents) {
     this.camera = camera;
@@ -51,54 +65,97 @@ export class PulseProjector {
       emissiveIntensity: 1.8, metalness: 0.2, roughness: 0.2
     });
     this.createViewModel();
-    this.events.onAmmoChanged(this.ammo, this.profile.capacity);
+    this.events.onAmmoChanged(this.ammo, this.capacity);
     this.events.onWeaponChanged(this.profile.name, this.profile.note);
   }
 
-  private get profile(): WeaponProfile { return PROFILES[this.weaponIndex]; }
+  private get profile(): WeaponProfile { return PROFILES[this.loadout.slot - 1]; }
+  private get capacity(): number {
+    return this.profile.capacity + (this.loadout.capacitor === 'extended' ? Math.ceil(this.profile.capacity * 0.25) : 0);
+  }
 
   update(delta: number): void {
     this.cooldown = Math.max(0, this.cooldown - delta);
+    const targetPosition = this.aiming
+      ? new THREE.Vector3(0.08, -0.205, -0.46)
+      : new THREE.Vector3(0.34, -0.29, -0.62);
+    this.model.position.lerp(targetPosition, Math.min(1, delta * 13));
+    const targetScale = this.aiming ? 0.88 : 1;
+    this.model.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), Math.min(1, delta * 13));
+
+    if (this.loadout.fullAuto && this.triggerHeld && !this.reloading) this.fire();
     if (!this.reloading) return;
     this.reloadTimer -= delta;
     if (this.reloadTimer <= 0) {
-      this.ammo = this.profile.capacity;
+      this.ammo = this.capacity;
       this.reloading = false;
-      this.events.onAmmoChanged(this.ammo, this.profile.capacity);
+      this.events.onAmmoChanged(this.ammo, this.capacity);
       this.events.onToast('ENERGY CELL RESTORED');
     }
   }
 
   selectWeapon(slot: number): void {
-    if (slot < 1 || slot > PROFILES.length || slot - 1 === this.weaponIndex) return;
-    this.weaponIndex = slot - 1;
-    this.ammo = this.profile.capacity;
+    if (slot < 1 || slot > PROFILES.length || slot === this.loadout.slot) return;
+    this.loadout.slot = slot;
+    if (slot === 3) this.loadout.fullAuto = false;
+    this.ammo = this.capacity;
     this.reloading = false;
     this.reloadTimer = 0;
     this.cooldown = 0.2;
     this.lensMaterial.color.setHex(this.profile.color);
     this.lensMaterial.emissive.setHex(this.profile.color);
-    this.events.onAmmoChanged(this.ammo, this.profile.capacity);
-    this.events.onWeaponChanged(this.profile.name, this.profile.note);
+    this.events.onAmmoChanged(this.ammo, this.capacity);
+    this.publishWeapon();
     this.events.onToast('EQUIPPED: ' + this.profile.name);
   }
+
+  getLoadout(): WeaponLoadout {
+    return { ...this.loadout };
+  }
+
+  applyLoadout(next: WeaponLoadout): void {
+    this.loadout = {
+      slot: Math.min(3, Math.max(1, Math.round(next.slot))),
+      optic: next.optic === 'precision' ? 'precision' : 'reflex',
+      capacitor: next.capacitor === 'extended' ? 'extended' : 'standard',
+      stabilizer: Boolean(next.stabilizer),
+      fullAuto: Boolean(next.fullAuto) && next.slot !== 3
+    };
+    this.ammo = this.capacity;
+    this.reloading = false;
+    this.reloadTimer = 0;
+    this.cooldown = 0.2;
+    this.lensMaterial.color.setHex(this.profile.color);
+    this.lensMaterial.emissive.setHex(this.profile.color);
+    this.events.onAmmoChanged(this.ammo, this.capacity);
+    this.publishWeapon();
+    this.events.onToast('LOADOUT CONFIGURATION APPLIED');
+  }
+
+  setAiming(value: boolean): void { this.aiming = value; }
+  setTriggerHeld(value: boolean): void { this.triggerHeld = value; }
 
   fire(): void {
     if (this.cooldown > 0 || this.reloading) return;
     if (this.ammo <= 0) {
       this.events.onToast('CELL EMPTY — PRESS R');
+      this.triggerHeld = false;
       return;
     }
 
     this.ammo--;
-    this.cooldown = this.profile.cooldown;
-    this.events.onAmmoChanged(this.ammo, this.profile.capacity);
+    const rateUpgrade = this.loadout.capacitor === 'extended' ? 1.08 : 1;
+    this.cooldown = this.profile.cooldown / rateUpgrade;
+    this.events.onAmmoChanged(this.ammo, this.capacity);
 
     const hits = new Set<TrainingDrone>();
     const rayCount = this.profile.rays;
+    const aimSpread = this.aiming ? 0.28 : 1;
+    const stabilizerSpread = this.loadout.stabilizer ? 0.65 : 1;
+    const spread = this.profile.spread * aimSpread * stabilizerSpread;
     for (let i = 0; i < rayCount; i++) {
-      const x = rayCount === 1 ? 0 : (i - (rayCount - 1) / 2) * this.profile.spread;
-      const y = rayCount === 1 ? 0 : ((i % 2) - 0.5) * this.profile.spread;
+      const x = rayCount === 1 ? 0 : (i - (rayCount - 1) / 2) * spread;
+      const y = rayCount === 1 ? 0 : ((i % 2) - 0.5) * spread;
       this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera);
       this.raycaster.far = 80;
       const hit = this.raycaster.intersectObjects(this.scene.children, true)[0];
@@ -112,14 +169,13 @@ export class PulseProjector {
       if (drone.registerHit()) {
         this.events.onScore(this.profile.score);
         this.events.onToast('TARGET TAGGED  +' + this.profile.score);
-      } else {
-        this.events.onToast('TARGET HIT');
-      }
+      } else this.events.onToast('TARGET HIT');
     }
   }
 
   reload(): void {
-    if (this.reloading || this.ammo === this.profile.capacity) return;
+    if (this.reloading || this.ammo === this.capacity) return;
+    this.triggerHeld = false;
     this.reloading = true;
     this.reloadTimer = this.profile.reloadTime;
     this.events.onToast('RECHARGING');
@@ -135,6 +191,14 @@ export class PulseProjector {
         materials.forEach((material) => material.dispose());
       }
     });
+  }
+
+  private publishWeapon(): void {
+    const upgrades = [
+      this.loadout.fullAuto ? 'FULL AUTO' : 'SEMI AUTO',
+      this.loadout.stabilizer ? 'STABILIZED' : 'STANDARD HANDLING'
+    ].join(' // ');
+    this.events.onWeaponChanged(this.profile.name, upgrades);
   }
 
   private createViewModel(): void {
