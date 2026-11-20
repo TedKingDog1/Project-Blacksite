@@ -46,7 +46,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .panel-value { margin-top: 4px; font: 700 25px 'Barlow Condensed', sans-serif; letter-spacing: 1px; }
 .panel-value small { color: #8f9ba3; font-size: 13px; }
 .health-value { color: #d9e2dc; }
-.weapon-name { font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.3px; }
+.weapon-name { font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.3px; color: #e4e9ec; }
 .weapon-note { margin-top: 4px; color: #8d9aa3; font-size: 9px; }
 .objective {
   position: absolute; top: 105px; left: 28px; padding-left: 12px;
@@ -60,7 +60,7 @@ canvas { display: block; width: 100%; height: 100%; }
   transition: opacity .15s ease;
 }
 .toast.visible { opacity: 1; }
-#start-overlay, #pause-overlay {
+#start-overlay, #pause-overlay, #death-overlay {
   position: absolute; inset: 0; display: grid; place-items: center;
   background: linear-gradient(110deg, rgba(4,8,12,.94), rgba(7,13,18,.76));
   pointer-events: auto;
@@ -90,3 +90,10 @@ canvas { display: block; width: 100%; height: 100%; }
   .panel { padding: 9px 10px; }
   .panel-value { font-size: 20px; }
 }
+
+#death-overlay { background: radial-gradient(ellipse at center, rgba(38,15,15,.78), rgba(5,8,12,.96)); }
+#death-overlay .overlay-card { border-color: rgba(211,120,93,.38); }
+#death-overlay .overlay-kicker { color: #d9856c; }
+#death-overlay .overlay-title { color: #f0e6df; }
+#death-overlay .action-button { background: #d39a76; }
+#death-overlay .action-button:hover { background: #e5b08d; }
