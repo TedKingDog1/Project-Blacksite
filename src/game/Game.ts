@@ -6,6 +6,7 @@ import { createWorld } from './World';
 import { TrainingDrone } from './Drone';
 import { PulseProjector } from './Weapon';
 import { HUD } from './HUD';
+import { CombatSystem } from './CombatSystem';
 
 export class Game {
   private readonly root: HTMLDivElement;
@@ -18,6 +19,7 @@ export class Game {
   private player?: Player;
   private weapon?: PulseProjector;
   private hud?: HUD;
+  private combat?: CombatSystem;
   private drones: TrainingDrone[] = [];
   private score = 0;
   private started = false;
@@ -59,6 +61,7 @@ export class Game {
     this.player?.dispose();
     this.weapon?.dispose();
     this.hud?.dispose();
+    this.combat?.dispose();
     if (this.scene) this.drones.forEach((drone) => drone.dispose(this.scene!));
     this.input.dispose();
     this.renderer?.dispose();
@@ -150,6 +153,11 @@ export class Game {
       },
       onToast: (message) => this.hud?.showToast(message)
     });
+
+    this.combat = new CombatSystem(this.scene, this.player, this.drones, {
+      onHealthChanged: (health) => this.hud?.setHealth(health),
+      onToast: (message) => this.hud?.showToast(message)
+    });
   }
 
   private bindEvents(): void {
@@ -189,6 +197,7 @@ export class Game {
 
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
+      this.combat?.update(delta);
       const playerPosition = this.player.position;
       this.drones.forEach((drone) => drone.update(delta, elapsed, playerPosition));
     } else {
