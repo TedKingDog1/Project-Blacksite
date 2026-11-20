@@ -42,7 +42,7 @@ export class TrainingDrone {
     scene.add(this.group);
   }
 
-  update(delta: number, elapsed: number, player: THREE.Vector3): void {
+  update(delta: number, elapsed: number, player: THREE.Vector3, formationTarget?: THREE.Vector3): void {
     if (!this.active) {
       this.respawnTimer -= delta;
       if (this.respawnTimer <= 0) this.respawn();
@@ -55,12 +55,12 @@ export class TrainingDrone {
       Math.sin(elapsed * 1.4 + this.phase) * 0.45,
       Math.cos(elapsed * 0.48 + this.phase) * 2.2
     );
-    const desired = this.home.clone().add(offset);
+    const desired = formationTarget ? formationTarget.clone() : this.home.clone().add(offset);
 
-    if (distance < 8) {
+    if (!formationTarget && distance < 8) {
       const away = this.group.position.clone().sub(player).setY(0).normalize();
       desired.addScaledVector(away, (8 - distance) * 0.7);
-    } else if (distance < 26) {
+    } else if (!formationTarget && distance < 26) {
       const strafe = new THREE.Vector3(Math.cos(elapsed * 0.8 + this.phase), 0, Math.sin(elapsed * 0.8 + this.phase));
       desired.addScaledVector(strafe, 1.8);
     }
