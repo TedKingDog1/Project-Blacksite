@@ -3,6 +3,8 @@ export class HUD {
   private readonly ammo: HTMLElement;
   private readonly score: HTMLElement;
   private readonly health: HTMLElement;
+  private readonly weaponName: HTMLElement;
+  private readonly weaponNote: HTMLElement;
   private readonly toast: HTMLElement;
   private toastTimer = 0;
 
@@ -11,11 +13,18 @@ export class HUD {
     this.ammo = this.required('ammo-value');
     this.score = this.required('score-value');
     this.health = this.required('health-value');
+    this.weaponName = this.required('weapon-name');
+    this.weaponNote = this.required('weapon-note');
     this.toast = this.required('toast');
   }
 
   setAmmo(current: number, capacity: number): void {
     this.ammo.textContent = String(current).padStart(2, '0') + ' / ' + String(capacity).padStart(2, '0');
+  }
+
+  setWeapon(name: string, note: string): void {
+    this.weaponName.textContent = name;
+    this.weaponNote.textContent = note;
   }
 
   setScore(value: number): void {
