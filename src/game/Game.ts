@@ -436,7 +436,7 @@ export class Game {
     if (event.repeat) return;
     if (event.code === 'KeyR') this.weapon?.reload();
     if (event.code === 'KeyG') this.ordnance?.throwGrenade();
-    if (event.code === 'KeyQ') this.ordnance?.launchRocket();
+
     if (event.code === 'Digit1') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(1); }
     if (event.code === 'Digit2') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(2); }
     if (event.code === 'Digit3') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(3); }
