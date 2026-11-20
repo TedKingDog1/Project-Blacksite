@@ -97,3 +97,20 @@ canvas { display: block; width: 100%; height: 100%; }
 #death-overlay .overlay-title { color: #f0e6df; }
 #death-overlay .action-button { background: #d39a76; }
 #death-overlay .action-button:hover { background: #e5b08d; }
+
+/* Cinematic presentation layer: subtle lens falloff without a costly post-process pass. */
+#viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(5,10,14,.22), transparent 24%, transparent 72%, rgba(5,9,13,.34)),
+    radial-gradient(ellipse at center, transparent 48%, rgba(4,8,12,.28) 100%);
+}
+.brand, .overlay-title, .weapon-name { text-shadow: 0 2px 12px rgba(0,0,0,.45); }
+.panel {
+  background: linear-gradient(135deg, rgba(14,21,27,.82), rgba(7,12,17,.72));
+  border-color: rgba(190,205,214,.22);
+  box-shadow: 0 10px 32px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.035);
+}
