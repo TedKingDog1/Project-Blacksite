@@ -111,19 +111,19 @@ export class Game {
           <div class="overlay-card">
             <div class="overlay-kicker">SINGLE PLAYER // FIELD TEST 001</div>
             <div class="overlay-title">BLACKSITE</div>
-            <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
-            <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
-            <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
+            <div class="overlay-copy">You are operating in a contested rural sector. Locate the field equipment and complete the three assigned objectives.</div>
+            <button class="action-button" id="start-button">DEPLOY TO FIELD</button>
+            <button class="secondary-button" id="start-loadout">EQUIPMENT</button>
             <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 PRIMARY · 4 RPG · 5 GRENADE LAUNCHER · G HAND GRENADE · R RECHARGE · E INTERACT · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">SIMULATION PAUSED</div>
+            <div class="overlay-kicker">FIELD OPERATION PAUSED</div>
             <div class="overlay-title">ON HOLD</div>
-            <div class="overlay-copy">The training range is waiting.</div>
-            <button class="action-button" id="resume-button">RESUME SIMULATION</button>
-            <button class="secondary-button" id="pause-loadout">EDIT LOADOUT</button>
+            <div class="overlay-copy">The field operation is on hold.</div>
+            <button class="action-button" id="resume-button">RESUME OPERATION</button>
+            <button class="secondary-button" id="pause-loadout">EQUIPMENT</button>
           </div>
         </div>
 
@@ -153,19 +153,19 @@ export class Game {
         </div>
         <div id="mission-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">PROJECT BLACKSITE // FIELD TEST COMPLETE</div>
+            <div class="overlay-kicker">FIELD OPERATION // COMPLETE</div>
             <div class="overlay-title">MISSION CLEAR</div>
-            <div class="overlay-copy">All three facility systems have been restored. The complex is back online.</div>
-            <button class="action-button" id="replay-mission">RUN SIMULATION AGAIN</button>
+            <div class="overlay-copy">All three field objectives are complete. The sector is secure.</div>
+            <button class="action-button" id="replay-mission">REDEPLOY</button>
           </div>
         </div>
         <div id="death-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">FIELD TEST 001 // SESSION INTERRUPTED</div>
+            <div class="overlay-kicker">FIELD OPERATION // SESSION ENDED</div>
             <div class="overlay-title">SIMULATION ENDED</div>
-            <div class="overlay-copy">Your training run has ended. Re-enter the range to restore your vitals and continue the exercise.</div>
-            <button class="action-button" id="respawn-button">RE-ENTER TRAINING RANGE</button>
-            <div class="controls-hint">VITALS RESTORED ON RE-ENTRY</div>
+            <div class="overlay-copy">Your operation has ended. Re-enter the field to restore your vitals and continue.</div>
+            <button class="action-button" id="respawn-button">REDEPLOY</button>
+            <div class="controls-hint">VITALS RESTORED ON REDEPLOY</div>
           </div>
         </div>
       </div>`;
@@ -336,10 +336,10 @@ export class Game {
     const kicker = this.root.querySelector<HTMLElement>('#mission-kicker');
     const objective = this.root.querySelector<HTMLElement>('#mission-objective');
     if (kicker) kicker.textContent = snapshot.complete
-      ? 'FACILITY RESTORATION // COMPLETE'
-      : 'FACILITY RESTORATION // OBJECTIVE ' + String(snapshot.stage).padStart(2, '0') + ' OF ' + String(snapshot.total).padStart(2, '0');
+      ? 'FIELD OBJECTIVES // COMPLETE'
+      : 'FIELD OBJECTIVE ' + String(snapshot.stage).padStart(2, '0') + ' OF ' + String(snapshot.total).padStart(2, '0');
     if (objective) objective.textContent = snapshot.complete
-      ? 'All facility systems are online. The site has been restored.'
+      ? 'All field objectives are complete.'
       : (snapshot.nearby ? 'PRESS E TO ACTIVATE ' : 'PROCEED TO ') + snapshot.name + ' // ' + snapshot.description;
     if (snapshot.complete && this.missionOverlay) {
       this.started = false;
