@@ -311,6 +311,7 @@ export class Game {
       this.ordnance?.update(delta, this.player.position);
       this.combat?.update(delta);
       const playerPosition = this.player.position;
+      // Evaluate proximity using the player's position after the physics step.
       this.objectives?.update(delta, playerPosition);
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
       const squadCenter = new THREE.Vector3(
