@@ -1,12 +1,17 @@
 export class HUD {
   private readonly root: HTMLDivElement;
-  private readonly ammo = this.required('ammo-value');
-  private readonly score = this.required('score-value');
-  private readonly health = this.required('health-value');
-  private readonly toast = this.required('toast');
+  private readonly ammo: HTMLElement;
+  private readonly score: HTMLElement;
+  private readonly health: HTMLElement;
+  private readonly toast: HTMLElement;
+  private toastTimer = 0;
 
   constructor(root: HTMLDivElement) {
     this.root = root;
+    this.ammo = this.required('ammo-value');
+    this.score = this.required('score-value');
+    this.health = this.required('health-value');
+    this.toast = this.required('toast');
   }
 
   setAmmo(current: number, capacity: number): void {
@@ -27,8 +32,6 @@ export class HUD {
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toast.classList.remove('visible'), 1000);
   }
-
-  private toastTimer = 0;
 
   dispose(): void {
     window.clearTimeout(this.toastTimer);
