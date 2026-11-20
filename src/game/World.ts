@@ -1,215 +1,398 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { addArchitecturalDetail, addAtmosphericEffects, createConcreteTexture, createSkyDome } from './Graphics';
+import { addAtmosphericEffects, createSkyDome } from './Graphics';
 
 export interface WorldResult {
   scene: THREE.Scene;
   colliders: number;
 }
 
-export function createWorld(physics: RAPIER.World): WorldResult {
+function makeGrassTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas texture generation is unavailable.');
+  ctx.fillStyle = '#526344';
+  ctx.fillRect(0, 0, 512, 512);
+  let seed = 12731;
+  const random = (): number => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let i = 0; i < 18000; i++) {
+    const x = random() * 512;
+    const y = random() * 512;
+    const length = 1 + random() * 5;
+    ctx.strokeStyle = random() > 0.52
+      ? 'rgba(157,163,105,0.30)'
+      : 'rgba(28,43,27,0.32)';
+    ctx.lineWidth = 0.6 + random() * 1.1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (random() - 0.5) * 2, y - length);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 900; i++) {
+    ctx.fillStyle = random() > 0.5 ? 'rgba(90,67,43,0.18)' : 'rgba(190,177,127,0.12)';
+    ctx.beginPath();
+    ctx.arc(random() * 512, random() * 512, 0.5 + random() * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(38, 38);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+export async function createWorld(physics: RAPIER.World): Promise<WorldResult> {
   const scene = new THREE.Scene();
   scene.background = null;
-  scene.fog = new THREE.Fog(0x9a9c96, 105, 235);
+  scene.fog = new THREE.Fog(0x9b9b91, 125, 285);
   createSkyDome(scene);
 
-  const hemi = new THREE.HemisphereLight(0xdce8ee, 0x303b3b, 1.35);
+  const hemi = new THREE.HemisphereLight(0xdce2df, 0x394333, 1.5);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffdfb5, 3.2);
-  sun.position.set(-35, 55, 25);
+  const sun = new THREE.DirectionalLight(0xffdfbd, 2.65);
+  sun.position.set(-42, 68, 34);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -92;
-  sun.shadow.camera.right = 92;
-  sun.shadow.camera.top = 92;
-  sun.shadow.camera.bottom = -92;
+  sun.shadow.camera.left = -105;
+  sun.shadow.camera.right = 105;
+  sun.shadow.camera.top = 105;
+  sun.shadow.camera.bottom = -105;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 220;
+  sun.shadow.camera.far = 260;
   sun.shadow.normalBias = 0.035;
   sun.shadow.bias = -0.00025;
   scene.add(sun);
 
-  const concreteTexture = createConcreteTexture();
-  const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x9b9d98, map: concreteTexture, bumpMap: concreteTexture,
-    bumpScale: 0.035, roughness: 0.96, metalness: 0.02
+  // Import the supplied GLB. Its exported node transform rotates the source XY
+  // grid onto the game's XZ ground plane.
+  const terrainGltf = await new GLTFLoader().loadAsync('/assets/terrain/Untitled-Project.glb');
+  const terrainRoot = terrainGltf.scene;
+  // After the GLB node transform, the terrain spans approximately X -15..165
+  // and Z -90..90. The raised ridge sits east of the mission route.
+  terrainRoot.position.set(83.948, 0, 0);
+  terrainRoot.scale.set(3, 1, 3);
+
+  const embeddedLights: THREE.Light[] = [];
+  const terrainMeshes: THREE.Mesh[] = [];
+  terrainRoot.traverse((object) => {
+    if (object instanceof THREE.Light) embeddedLights.push(object);
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      terrainMeshes.push(object);
+    }
   });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), groundMat);
+  embeddedLights.forEach((light) => light.parent?.remove(light));
+  scene.add(terrainRoot);
+  terrainRoot.updateMatrixWorld(true);
+
+  // Build the static collider from the exact transformed render geometry.
+  const colliderVertices: number[] = [];
+  const colliderIndices: number[] = [];
+  for (const mesh of terrainMeshes) {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const vertexOffset = colliderVertices.length / 3;
+    const point = new THREE.Vector3();
+    for (let i = 0; i < position.count; i++) {
+      point.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+      colliderVertices.push(point.x, point.y, point.z);
+    }
+    if (index) {
+      for (let i = 0; i < index.count; i++) colliderIndices.push(index.getX(i) + vertexOffset);
+    } else {
+      for (let i = 0; i < position.count; i++) colliderIndices.push(i + vertexOffset);
+    }
+  }
+  physics.createCollider(
+    RAPIER.ColliderDesc.trimesh(
+      new Float32Array(colliderVertices),
+      new Uint32Array(colliderIndices)
+    ).setFriction(0.9)
+  );
+
+  // Raycast the imported surface when placing scenery so objects on slopes
+  // are raised to the same height as the visible terrain.
+  const terrainRaycaster = new THREE.Raycaster();
+  const terrainDown = new THREE.Vector3(0, -1, 0);
+  const groundHeight = (x: number, z: number): number => {
+    terrainRaycaster.set(new THREE.Vector3(x, 250, z), terrainDown);
+    const hit = terrainRaycaster.intersectObjects(terrainMeshes, false)[0];
+    return hit?.point.y ?? 0;
+  };
+
+  const grassTexture = makeGrassTexture();
+  const grass = new THREE.MeshStandardMaterial({
+    color: 0xffffff, map: grassTexture, roughness: 1, metalness: 0
+  });
+  const earth = new THREE.MeshStandardMaterial({ color: 0x65533b, roughness: 1 });
+  const mud = new THREE.MeshStandardMaterial({ color: 0x493d30, roughness: 1 });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x777568, roughness: 0.98 });
+  const weatheredWood = new THREE.MeshStandardMaterial({ color: 0x574532, roughness: 0.95 });
+  const plaster = new THREE.MeshStandardMaterial({ color: 0xb2a58b, roughness: 0.96 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x45413b, roughness: 0.95 });
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4a503b, roughness: 0.9 });
+  const sandbag = new THREE.MeshStandardMaterial({ color: 0x9a8968, roughness: 1 });
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x343a37, metalness: 0.38, roughness: 0.78 });
+
+  // A slightly lower fallback floor catches movement beyond the GLB bounds.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), grass);
   ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.04;
   ground.receiveShadow = true;
   scene.add(ground);
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(120, 0.25, 120).setTranslation(0, -0.25, 0));
+  physics.createCollider(RAPIER.ColliderDesc.cuboid(150, 0.25, 150).setTranslation(0, -0.29, 0));
 
-  const lineMat = new THREE.MeshStandardMaterial({ color: 0xc2b89d, roughness: 0.85 });
-  for (let i = -4; i <= 4; i++) {
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.012, 24), lineMat);
-    stripe.position.set(i * 5, 0.008, -8);
-    scene.add(stripe);
-  }
-
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x737d80, roughness: 0.88 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x39464b, roughness: 0.82, metalness: 0.25 });
-  const containerMat = new THREE.MeshStandardMaterial({ color: 0x596b69, roughness: 0.78, metalness: 0.2 });
-
-  let colliders = 1;
-  const addBox = (x: number, y: number, z: number, sx: number, sy: number, sz: number, material: THREE.Material): void => {
+  let colliders = 2;
+  const addBox = (
+    x: number, y: number, z: number, sx: number, sy: number, sz: number,
+    material: THREE.Material, collision = true, rotationY = 0
+  ): THREE.Mesh => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
-    mesh.position.set(x, y, z);
+    const surfaceY = y + groundHeight(x, z);
+    mesh.position.set(x, surfaceY, z);
+    mesh.rotation.y = rotationY;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-    physics.createCollider(
-      RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2).setTranslation(x, y, z)
-    );
-    colliders++;
+    if (collision) {
+      physics.createCollider(
+        RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2)
+          .setTranslation(x, surfaceY, z)
+          .setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) })
+      );
+      colliders++;
+    }
+    return mesh;
   };
 
-  // Low cover, perimeter barriers, and inert industrial scenery.
-  addBox(0, 2, -72, 145, 4, 1.2, wallMat);
-  addBox(-72, 2, 0, 1.2, 4, 145, wallMat);
-  addBox(72, 2, 0, 1.2, 4, 145, wallMat);
-  addBox(0, 2, 72, 145, 4, 1.2, wallMat);
-  addBox(-18, 0.65, -8, 8, 1.3, 2.2, darkMat);
-  addBox(18, 0.65, -8, 8, 1.3, 2.2, darkMat);
-  addBox(-23, 1.4, 19, 12, 2.8, 3.2, containerMat);
-  addBox(22, 1.4, 20, 12, 2.8, 3.2, containerMat);
-  addBox(0, 0.7, 29, 15, 1.4, 2.4, wallMat);
-  addBox(-9, 0.55, 5, 2.4, 1.1, 2.4, darkMat);
-  addBox(10, 0.55, 9, 2.4, 1.1, 2.4, darkMat);
+  const addHill = (x: number, z: number, sx: number, sy: number, sz: number, color: number): void => {
+    const hill = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 18, 12),
+      new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true })
+    );
+    hill.position.set(x, sy * 0.42 - 1.2, z);
+    hill.scale.set(sx, sy, sz);
+    hill.receiveShadow = true;
+    hill.castShadow = true;
+    scene.add(hill);
+  };
 
-  // Simple modular industrial buildings around the training yard.
-  addBox(-30, 3, -25, 12, 6, 10, wallMat);
-  addBox(30, 3, -25, 12, 6, 10, wallMat);
-  addBox(-30, 6.1, -25, 12.4, 0.3, 10.4, darkMat);
-  addBox(30, 6.1, -25, 12.4, 0.3, 10.4, darkMat);
+  // Rolling countryside frames the playable valley. The central ground stays level
+  // so the visual terrain never disagrees with the player's physics collider.
+  [
+    [-112, -112, 46, 25, 35, 0x68745a], [-48, -125, 52, 22, 30, 0x7b8060],
+    [35, -126, 56, 30, 34, 0x687458], [112, -105, 45, 26, 42, 0x74795a],
+    [-128, -22, 38, 24, 48, 0x727b5c], [128, -12, 42, 28, 50, 0x667252],
+    [-120, 96, 55, 28, 38, 0x777d5c], [-45, 128, 50, 25, 34, 0x6d7858],
+    [45, 130, 48, 27, 38, 0x7c8060], [118, 100, 52, 30, 42, 0x687455]
+  ].forEach(h => addHill(h[0], h[1], h[2], h[3], h[4], h[5]));
 
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x30383b, metalness: 0.65, roughness: 0.45 });
-  for (const [x, z] of [[-37, -35], [37, -35], [-37, 35], [37, 35]] as const) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 8, 10), poleMat);
-    pole.position.set(x, 4, z);
-    pole.castShadow = true;
-    scene.add(pole);
-    const lamp = new THREE.PointLight(0xffd9a0, 18, 18, 2);
-    lamp.position.set(x, 7.4, z);
-    scene.add(lamp);
+  // Irregular dirt tracks across the valley, connecting the three mission areas.
+  const addTrack = (points: THREE.Vector3[], width: number): void => {
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      const mid = a.clone().add(b).multiplyScalar(0.5);
+      const length = a.distanceTo(b);
+      const segment = new THREE.Mesh(new THREE.BoxGeometry(width, 0.035, length), earth);
+      const surfaceY = groundHeight(mid.x, mid.z);
+      segment.position.set(mid.x, surfaceY + 0.018, mid.z);
+      segment.rotation.y = -Math.atan2(b.x - a.x, b.z - a.z);
+      segment.receiveShadow = true;
+      scene.add(segment);
+      const rut = new THREE.Mesh(new THREE.BoxGeometry(width * 0.12, 0.012, length * 0.96), mud);
+      rut.position.set(mid.x - width * 0.25, surfaceY + 0.042, mid.z);
+      rut.rotation.y = segment.rotation.y;
+      scene.add(rut);
+      const rut2 = rut.clone();
+      rut2.position.x = mid.x + width * 0.25;
+      scene.add(rut2);
+    }
+  };
+  addTrack([
+    new THREE.Vector3(-95, 0, 20), new THREE.Vector3(-66, 0, 12),
+    new THREE.Vector3(-42, 0, -4), new THREE.Vector3(-18, 0, 2),
+    new THREE.Vector3(10, 0, 15), new THREE.Vector3(39, 0, 20),
+    new THREE.Vector3(70, 0, 8), new THREE.Vector3(98, 0, -12)
+  ], 7.5);
+  addTrack([
+    new THREE.Vector3(-10, 0, -90), new THREE.Vector3(-7, 0, -58),
+    new THREE.Vector3(0, 0, -28), new THREE.Vector3(8, 0, 4),
+    new THREE.Vector3(0, 0, 38), new THREE.Vector3(-8, 0, 68),
+    new THREE.Vector3(-12, 0, 96)
+  ], 6);
+
+  // Farmhouses and outbuildings, placed around the perimeter of the playable valley.
+  const addHouse = (x: number, z: number, scale = 1, ruined = false): void => {
+    const w = 11 * scale, h = 5.2 * scale, d = 8 * scale;
+    const baseY = groundHeight(x, z);
+    addBox(x, h / 2, z, w, h, d, ruined ? stone : plaster);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.78, 3.4 * scale, 4), roofMat);
+    roof.position.set(x, baseY + h + 1.55 * scale, z);
+    roof.rotation.y = Math.PI / 4;
+    roof.scale.z = d / w;
+    roof.castShadow = true;
+    scene.add(roof);
+    // Dark window recesses and a simple timber door.
+    for (const side of [-1, 1]) {
+      addBox(x + side * 2.8 * scale, 2.8 * scale, z - d / 2 - 0.035, 1.15 * scale, 1.35 * scale, 0.08, darkMetal, false);
+    }
+    addBox(x, 1.15 * scale, z + d / 2 + 0.045, 1.25 * scale, 2.3 * scale, 0.12, weatheredWood, false);
+    if (ruined) {
+      const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2 * scale, 0), stone);
+      rubble.position.set(x - 5 * scale, baseY + 0.55 * scale, z + 3 * scale);
+      rubble.scale.set(2.2, 0.65, 1.3);
+      rubble.rotation.y = 0.5;
+      rubble.castShadow = true;
+      scene.add(rubble);
+    }
+  };
+  addHouse(-55, -48, 1.15, true);
+  addHouse(55, -53, 1.05, false);
+  addHouse(-65, 55, 0.92, false);
+  addHouse(65, 58, 1.2, true);
+
+  // A low stone farm wall, broken into sections with gaps for traversal.
+  for (const [x, z, length, angle] of [
+    [-56, -20, 24, 0], [-56, 2, 17, 0], [55, -18, 27, 0],
+    [55, 8, 18, 0], [-30, 66, 26, Math.PI / 2], [28, 66, 22, Math.PI / 2]
+  ] as const) {
+    addBox(x, 0.72, z, length, 1.35, 0.75, stone, true, angle);
   }
 
-
-  // Outer service yards: low buildings, loading bays, and additional cover.
-  addBox(-53, 2.8, -48, 18, 5.6, 14, wallMat);
-  addBox(-53, 5.7, -48, 18.5, 0.35, 14.5, darkMat);
-  addBox(53, 2.8, -48, 18, 5.6, 14, wallMat);
-  addBox(53, 5.7, -48, 18.5, 0.35, 14.5, darkMat);
-  addBox(-52, 0.8, 42, 13, 1.6, 3, containerMat);
-  addBox(-37, 0.8, 48, 11, 1.6, 3, darkMat);
-  addBox(49, 0.8, 43, 14, 1.6, 3, containerMat);
-  addBox(34, 0.8, 49, 11, 1.6, 3, darkMat);
-  addBox(0, 1.1, -56, 22, 2.2, 2.4, darkMat);
-  addBox(-12, 0.65, 36, 3, 1.3, 3, darkMat);
-  addBox(13, 0.65, 39, 3, 1.3, 3, darkMat);
-  addBox(-39, 0.65, -4, 3, 1.3, 8, containerMat);
-  addBox(40, 0.65, -2, 3, 1.3, 8, containerMat);
-
-  // Painted service-lane markings and compact non-colliding surface details.
-  const markingMat = new THREE.MeshStandardMaterial({ color: 0xb5a77f, roughness: 0.9 });
-  for (const z of [-62, -32, 0, 32, 62]) {
-    const marking = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.014, 5), markingMat);
-    marking.position.set(0, 0.018, z);
-    scene.add(marking);
-  }
-  const stripeMat = new THREE.MeshStandardMaterial({ color: 0xc5a56a, roughness: 0.85 });
-  for (const x of [-62, -48, 48, 62]) {
-    for (const z of [-18, 18]) {
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(4, 0.018, 0.16), stripeMat);
-      stripe.position.set(x, 0.02, z);
-      scene.add(stripe);
+  // Shallow trench lines with timber revetments and sandbagged lips.
+  const trenchMat = new THREE.MeshStandardMaterial({ color: 0x403a2d, roughness: 1 });
+  for (const [x, z, length, angle] of [[-12, -40, 34, 0.12], [28, 35, 28, -0.22], [-58, 25, 22, 0.3]] as const) {
+    const cut = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.12, length), trenchMat);
+    cut.position.set(x, groundHeight(x, z) + 0.025, z);
+    cut.rotation.y = angle;
+    scene.add(cut);
+    for (let i = -length / 2; i <= length / 2; i += 2.5) {
+      const px = x + Math.sin(angle) * i;
+      const pz = z + Math.cos(angle) * i;
+      const timber = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.85, 1.8), weatheredWood);
+      timber.position.set(px - 1.25, groundHeight(px - 1.25, pz) + 0.42, pz);
+      timber.rotation.y = angle;
+      timber.castShadow = true;
+      scene.add(timber);
+      const bag = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.48, 0.72), sandbag);
+      bag.position.set(px + 1.15, groundHeight(px + 1.15, pz) + 0.28, pz);
+      bag.rotation.y = angle + (i % 5) * 0.025;
+      bag.castShadow = true;
+      scene.add(bag);
     }
   }
 
-  // Repeated ventilation units and rooftop details add silhouette without heavy geometry.
-  const ventMat = new THREE.MeshStandardMaterial({ color: 0x263238, metalness: 0.55, roughness: 0.65 });
-  const ventTopMat = new THREE.MeshStandardMaterial({ color: 0x879195, metalness: 0.45, roughness: 0.55 });
-  for (const [x, z] of [[-30, -25], [30, -25], [-53, -48], [53, -48]] as const) {
-    for (let i = -1; i <= 1; i++) {
-      const vent = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.75, 1.1), ventMat);
-      vent.position.set(x + i * 3, 6.48, z);
-      vent.castShadow = true;
-      scene.add(vent);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.12, 1.25), ventTopMat);
-      cap.position.set(x + i * 3, 6.91, z);
-      scene.add(cap);
+  // Small sandbag positions, field crates, and wooden observation posts.
+  for (const [x, z, count, angle] of [[-23, 18, 5, 0.3], [22, 27, 6, -0.4], [48, -4, 4, 1.1], [-48, 8, 4, -0.8]] as const) {
+    for (let i = 0; i < count; i++) {
+      const bag = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.48, 0.72), sandbag);
+      const bx = x + Math.cos(angle) * i * 1.05;
+      const bz = z + Math.sin(angle) * i * 1.05;
+      bag.position.set(bx, groundHeight(bx, bz) + 0.28, bz);
+      bag.rotation.y = angle;
+      bag.castShadow = true;
+      scene.add(bag);
     }
   }
-
-  // Tall wayfinding pylons mark the training sectors.
-  const pylonMat = new THREE.MeshStandardMaterial({ color: 0x303b40, metalness: 0.65, roughness: 0.4 });
-  const pylonLightMat = new THREE.MeshStandardMaterial({ color: 0x8bd7e8, emissive: 0x267d91, emissiveIntensity: 1.8 });
-  for (const [x, z] of [[-63, -5], [63, -5], [-5, -63], [5, 63]] as const) {
-    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.55, 4.5, 0.55), pylonMat);
-    pylon.position.set(x, 2.25, z);
-    pylon.castShadow = true;
-    scene.add(pylon);
-    const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.62), pylonLightMat);
-    beacon.position.set(x, 4.2, z);
-    scene.add(beacon);
+  for (const [x, z] of [[-43, -35], [44, -36], [-45, 48], [43, 48]] as const) {
+    addBox(x, 0.65, z, 2.1, 1.3, 1.6, weatheredWood);
+    addBox(x, 1.34, z, 2.2, 0.12, 1.7, olive, false);
   }
 
-  // Sector-specific objective landmarks: illuminated rings, numbered pylons and painted approach pads.
-  const objectiveColors = [0x79d6e8, 0xd9b879, 0x91d8a5];
-  const sectors = [{ x: -34, z: -12 }, { x: 34, z: -12 }, { x: 0, z: 48 }];
-  sectors.forEach((sector, index) => {
-    const color = objectiveColors[index];
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.08, 40),
-      new THREE.MeshStandardMaterial({ color: 0x343e42, roughness: 0.92, metalness: 0.18 }));
-    pad.position.set(sector.x, 0.05, sector.z); pad.receiveShadow = true; scene.add(pad);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.35, 0.085, 8, 48),
-      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.15, metalness: 0.35, roughness: 0.3 }));
-    ring.rotation.x = Math.PI / 2; ring.position.set(sector.x, 0.16, sector.z); scene.add(ring);
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 5.8, 10),
-      new THREE.MeshStandardMaterial({ color: 0x303a40, metalness: 0.72, roughness: 0.4 }));
-    mast.position.set(sector.x, 2.9, sector.z); mast.castShadow = true; scene.add(mast);
-    const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0),
-      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2.2 }));
-    beacon.position.set(sector.x, 5.95, sector.z); scene.add(beacon);
-    const sectorLight = new THREE.PointLight(color, 5, 13, 2);
-    sectorLight.position.set(sector.x, 3.2, sector.z); scene.add(sectorLight);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(8, 0.018, 0.22),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
-    stripe.position.set(sector.x, 0.11, sector.z + 5.2); scene.add(stripe);
+  // Shell craters: flattened earthen bowls and dark, muddy centers.
+  const craterRim = new THREE.MeshStandardMaterial({ color: 0x5b513d, roughness: 1 });
+  for (const [x, z, radius] of [[-46, -2, 3.4], [45, 4, 4.1], [-4, -65, 3.2], [15, 61, 3.7], [70, -25, 2.8], [-72, 37, 3.1]] as const) {
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.8, 7, 22), craterRim);
+    rim.rotation.x = Math.PI / 2;
+    const surfaceY = groundHeight(x, z);
+    rim.position.set(x, surfaceY + 0.14, z);
+    rim.scale.set(1.35, 1, 0.78);
+    rim.receiveShadow = true;
+    scene.add(rim);
+    const center = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.78, 20), mud);
+    center.rotation.x = -Math.PI / 2;
+    center.position.set(x, surfaceY + 0.04, z);
+    center.scale.set(1.35, 0.78, 1);
+    scene.add(center);
+  }
+
+  // Low-poly trees along the field edges, leaving the center and objectives readable.
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x51402e, roughness: 1 });
+  const leafMats = [
+    new THREE.MeshStandardMaterial({ color: 0x354a32, roughness: 1, flatShading: true }),
+    new THREE.MeshStandardMaterial({ color: 0x46583a, roughness: 1, flatShading: true }),
+    new THREE.MeshStandardMaterial({ color: 0x596342, roughness: 1, flatShading: true })
+  ];
+  let treeSeed = 731;
+  const rand = (): number => {
+    treeSeed = (treeSeed * 1103515245 + 12345) & 0x7fffffff;
+    return treeSeed / 0x80000000;
+  };
+  const treePositions: Array<[number, number]> = [];
+  for (const [cx, cz] of [[-92, -42], [92, -45], [-94, 62], [94, 70], [-20, -100], [34, -103]] as const) {
+    for (let i = 0; i < 8; i++) treePositions.push([cx + (rand() - 0.5) * 22, cz + (rand() - 0.5) * 25]);
+  }
+  treePositions.forEach(([x, z], i) => {
+    const height = 4.2 + rand() * 2.6;
+    const surfaceY = groundHeight(x, z);
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, height * 0.55, 6), trunkMat);
+    trunk.position.set(x, surfaceY + height * 0.275, z);
+    trunk.castShadow = true;
+    scene.add(trunk);
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2 + rand() * 1.4, 1), leafMats[i % leafMats.length]);
+    crown.position.set(x, surfaceY + height * 0.72, z);
+    crown.scale.set(1, 1.25, 0.95);
+    crown.castShadow = true;
+    scene.add(crown);
   });
 
-  // Service roads, road dashes and utility cabinets establish the scale of the complex.
-  const asphalt = new THREE.MeshStandardMaterial({ color: 0x343c40, roughness: 0.96 });
-  const roadEdge = new THREE.MeshStandardMaterial({ color: 0x9d9a88, roughness: 0.9 });
-  for (const z of [-46, 46]) {
-    const road = new THREE.Mesh(new THREE.BoxGeometry(116, 0.035, 7), asphalt);
-    road.position.set(0, 0.025, z); road.receiveShadow = true; scene.add(road);
-    for (const x of [-54, -36, -18, 0, 18, 36, 54]) {
-      const dash = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.012, 0.12), roadEdge);
-      dash.position.set(x, 0.05, z); scene.add(dash);
+  // Weathered fence posts and sagging wire as distant environmental dressing.
+  const fencePostMat = new THREE.MeshStandardMaterial({ color: 0x584833, roughness: 1 });
+  const wireMat = new THREE.MeshStandardMaterial({ color: 0x494b45, metalness: 0.25, roughness: 0.85 });
+  for (let i = 0; i < 16; i++) {
+    const x = -75 + i * 10;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.6, 0.18), fencePostMat);
+    const fenceZ = 82 + Math.sin(i * 0.6) * 2;
+    const fenceY = groundHeight(x, fenceZ);
+    post.position.set(x, fenceY + 0.8, fenceZ);
+    post.castShadow = true;
+    scene.add(post);
+    if (i > 0) {
+      const prevX = x - 10;
+      for (const y of [0.55, 1.1]) {
+        const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 10, 4), wireMat);
+        wire.position.set((x + prevX) / 2, fenceY + y, fenceZ);
+        wire.rotation.z = Math.PI / 2;
+        scene.add(wire);
+      }
     }
   }
-  const cabinetMat = new THREE.MeshStandardMaterial({ color: 0x46545a, metalness: 0.62, roughness: 0.48 });
-  for (const [x, z] of [[-61, -30], [61, -30], [-61, 30], [61, 30]] as const) {
-    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.8, 0.7), cabinetMat);
-    cabinet.position.set(x, 0.9, z); cabinet.castShadow = true; scene.add(cabinet);
-    const indicator = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.025),
-      new THREE.MeshStandardMaterial({ color: 0x8bd7e8, emissive: 0x267d91, emissiveIntensity: 1.4 }));
-    indicator.position.set(x, 1.35, z - 0.36); scene.add(indicator);
+
+  // Objective areas are now muddy clearings in the field, not painted sci-fi pads.
+  for (const [x, z] of [[-34, -12], [34, -12], [0, 48]] as const) {
+    const clearing = new THREE.Mesh(new THREE.CircleGeometry(5.2, 32), earth);
+    clearing.rotation.x = -Math.PI / 2;
+    clearing.position.set(x, groundHeight(x, z) + 0.022, z);
+    clearing.receiveShadow = true;
+    scene.add(clearing);
+    const track = new THREE.Mesh(new THREE.RingGeometry(5.3, 5.55, 32), grass);
+    track.rotation.x = -Math.PI / 2;
+    track.position.set(x, groundHeight(x, z) + 0.03, z);
+    scene.add(track);
   }
 
-  addArchitecturalDetail(scene);
+  // Soft battlefield haze and restrained drifting dust.
   addAtmosphericEffects(scene);
-
-  const grid = new THREE.GridHelper(240, 120, 0x657173, 0x737c7d);
-  grid.position.y = 0.012;
-  const gridMaterials = Array.isArray(grid.material) ? grid.material : [grid.material];
-  for (const material of gridMaterials) {
-    material.transparent = true;
-    material.opacity = 0.12;
-  }
-  scene.add(grid);
 
   return { scene, colliders };
 }

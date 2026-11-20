@@ -5,7 +5,7 @@ import { Player } from './Player';
 import { createWorld } from './World';
 import { TrainingDrone } from './Drone';
 import { SquadBot } from './SquadBot';
-import { MissionDirector, type MissionSnapshot } from './MissionDirector';
+import { ObjectiveSystem, type ObjectiveSnapshot } from './ObjectiveSystem';
 import { PulseProjector, type WeaponLoadout } from './Weapon';
 import { HUD } from './HUD';
 import { CombatSystem } from './CombatSystem';
@@ -24,7 +24,7 @@ export class Game {
   private hud?: HUD;
   private combat?: CombatSystem;
   private ordnance?: Ordnance;
-  private mission?: MissionDirector;
+  private objectives?: ObjectiveSystem;
   private readonly squadOffsets = [
     new THREE.Vector3(-2, 0, -3), new THREE.Vector3(2, 0, -3),
     new THREE.Vector3(-4, 0, 0), new THREE.Vector3(4, 0, 0),
@@ -32,7 +32,6 @@ export class Game {
   ];
   private drones: TrainingDrone[] = [];
   private score = 0;
-  private missionWave = 1;
   private started = false;
   private disposed = false;
   private physicsAccumulator = 0;
@@ -55,7 +54,8 @@ export class Game {
       if (this.disposed) return;
       this.buildInterface();
       this.initializeEngine();
-      this.initializeWorld();
+      await this.initializeWorld();
+      if (this.disposed) return;
       this.initializeGameplay();
       this.hideLoading();
       this.bindEvents();
@@ -80,6 +80,7 @@ export class Game {
     this.player?.dispose();
     this.weapon?.dispose();
     this.ordnance?.dispose();
+    this.objectives?.dispose();
     this.hud?.dispose();
     this.combat?.dispose();
     if (this.scene) this.drones.forEach((drone) => drone.dispose(this.scene!));
@@ -97,7 +98,7 @@ export class Game {
             <div><div class="brand">PROJECT <span>BLACKSITE</span></div><div class="mission-label">TRAINING COMPLEX // SECTOR 04</div></div>
             <div class="status-block"><div class="status-label">SIMULATION STATUS</div><div class="status-value">LIVE <span style="color:#c5a56a">●</span></div></div>
           </div>
-          <div class="objective"><div class="objective-kicker" id="mission-kicker">MISSION 01 // WAVE 1 OF 3</div><div class="objective-text" id="mission-objective">Tag all 6 squad units to advance. Complete all three waves.</div></div>
+          <div class="objective"><div class="objective-kicker" id="mission-kicker">MISSION 01 // WAVE 1 OF 3</div><div class="objective-text" id="mission-objective">Restore the facility systems. Follow the illuminated terminals and press E to interact.</div></div>
           <div class="center-reticle"></div>
           <div class="toast" id="toast"></div>
           <div class="ordnance-readout" id="ordnance-readout">PULSE GRENADES 03 <span>//</span> ROCKET CELLS 03</div>
@@ -111,19 +112,19 @@ export class Game {
           <div class="overlay-card">
             <div class="overlay-kicker">SINGLE PLAYER // FIELD TEST 001</div>
             <div class="overlay-title">BLACKSITE</div>
-            <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
-            <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
-            <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
-            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 PRIMARY · 4 RPG · 5 GRENADE LAUNCHER · G HAND GRENADE · R RECHARGE · ESC PAUSE</div>
+            <div class="overlay-copy">You are operating in a contested rural sector. Locate the field equipment and complete the three assigned objectives.</div>
+            <button class="action-button" id="start-button">DEPLOY TO FIELD</button>
+            <button class="secondary-button" id="start-loadout">EQUIPMENT</button>
+            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 PRIMARY · 4 RPG · 5 GRENADE LAUNCHER · G HAND GRENADE · R RECHARGE · E INTERACT · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">SIMULATION PAUSED</div>
+            <div class="overlay-kicker">FIELD OPERATION PAUSED</div>
             <div class="overlay-title">ON HOLD</div>
-            <div class="overlay-copy">The training range is waiting.</div>
-            <button class="action-button" id="resume-button">RESUME SIMULATION</button>
-            <button class="secondary-button" id="pause-loadout">EDIT LOADOUT</button>
+            <div class="overlay-copy">The field operation is on hold.</div>
+            <button class="action-button" id="resume-button">RESUME OPERATION</button>
+            <button class="secondary-button" id="pause-loadout">EQUIPMENT</button>
           </div>
         </div>
 
@@ -153,19 +154,19 @@ export class Game {
         </div>
         <div id="mission-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">PROJECT BLACKSITE // FIELD TEST COMPLETE</div>
+            <div class="overlay-kicker">FIELD OPERATION // COMPLETE</div>
             <div class="overlay-title">MISSION CLEAR</div>
-            <div class="overlay-copy">All three training waves have been completed. Mission performance logged.</div>
-            <button class="action-button" id="replay-mission">RUN SIMULATION AGAIN</button>
+            <div class="overlay-copy">All three field objectives are complete. The sector is secure.</div>
+            <button class="action-button" id="replay-mission">REDEPLOY</button>
           </div>
         </div>
         <div id="death-overlay" style="display:none">
           <div class="overlay-card">
-            <div class="overlay-kicker">FIELD TEST 001 // SESSION INTERRUPTED</div>
+            <div class="overlay-kicker">FIELD OPERATION // SESSION ENDED</div>
             <div class="overlay-title">SIMULATION ENDED</div>
-            <div class="overlay-copy">Your training run has ended. Re-enter the range to restore your vitals and continue the exercise.</div>
-            <button class="action-button" id="respawn-button">RE-ENTER TRAINING RANGE</button>
-            <div class="controls-hint">VITALS RESTORED ON RE-ENTRY</div>
+            <div class="overlay-copy">Your operation has ended. Re-enter the field to restore your vitals and continue.</div>
+            <button class="action-button" id="respawn-button">REDEPLOY</button>
+            <div class="controls-hint">VITALS RESTORED ON REDEPLOY</div>
           </div>
         </div>
       </div>`;
@@ -192,10 +193,11 @@ export class Game {
     viewport.appendChild(this.renderer.domElement);
   }
 
-  private initializeWorld(): void {
+  private async initializeWorld(): Promise<void> {
     this.physics = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.physics.timestep = 1 / 60;
-    const world = createWorld(this.physics);
+    const world = await createWorld(this.physics);
+    if (this.disposed) return;
     this.scene = world.scene;
   }
 
@@ -208,7 +210,8 @@ export class Game {
     this.drones = this.squadOffsets.map((offset, index) =>
       new SquadBot(this.scene!, squadCenter.clone().add(offset), index)
     );
-    this.mission = new MissionDirector(
+    this.objectives = new ObjectiveSystem(
+      this.scene,
       (snapshot) => this.updateMissionDisplay(snapshot),
       (message) => this.hud?.showToast(message)
     );
@@ -218,14 +221,13 @@ export class Game {
       onScore: (amount) => {
         this.score += amount;
         this.hud?.setScore(this.score);
-        this.mission?.targetTagged();
       },
       onToast: (message) => this.hud?.showToast(message),
       onWeaponChanged: (name, note) => this.hud?.setWeapon(name, note)
     });
 
     this.ordnance = new Ordnance(this.scene, this.camera, this.drones, {
-      onScore: (amount) => { this.score += amount; this.hud?.setScore(this.score); this.mission?.targetTagged(); },
+      onScore: (amount) => { this.score += amount; this.hud?.setScore(this.score); },
       onToast: (message) => this.hud?.showToast(message),
       onAmmo: (grenades, rockets, launcherRounds) => {
         const readout = this.root.querySelector<HTMLElement>('#ordnance-readout');
@@ -257,7 +259,7 @@ export class Game {
       this.player?.controls.lock();
     });
     this.root.querySelector<HTMLButtonElement>('#replay-mission')?.addEventListener('click', () => {
-      this.mission?.reset();
+      this.objectives?.reset();
       this.ordnance?.reset();
       this.score = 0;
       this.hud?.setScore(0);
@@ -268,8 +270,7 @@ export class Game {
     this.root.querySelector<HTMLButtonElement>('#respawn-button')?.addEventListener('click', () => {
       this.combat?.respawn();
       this.ordnance?.reset();
-      this.mission?.reset();
-      this.ordnance?.reset();
+      this.objectives?.reset();
       this.score = 0;
       this.hud?.setScore(0);
       this.defeated = false;
@@ -310,8 +311,10 @@ export class Game {
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
       this.ordnance?.update(delta, this.player.position);
-      this.combat?.update(delta, 1 + (this.missionWave - 1) * 0.22);
+      this.combat?.update(delta);
       const playerPosition = this.player.position;
+      // Evaluate proximity using the player's position after the physics step.
+      this.objectives?.update(delta, playerPosition);
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
       const squadCenter = new THREE.Vector3(
         Math.cos(patrolPhase) * 17,
@@ -331,14 +334,15 @@ export class Game {
     this.renderer.render(this.scene, this.camera);
   }
 
-  private updateMissionDisplay(snapshot: MissionSnapshot): void {
+  private updateMissionDisplay(snapshot: ObjectiveSnapshot): void {
     const kicker = this.root.querySelector<HTMLElement>('#mission-kicker');
     const objective = this.root.querySelector<HTMLElement>('#mission-objective');
-    this.missionWave = snapshot.wave;
-    if (kicker) kicker.textContent = 'MISSION 01 // WAVE ' + snapshot.wave + ' OF ' + snapshot.totalWaves;
+    if (kicker) kicker.textContent = snapshot.complete
+      ? 'FIELD OBJECTIVES // COMPLETE'
+      : 'FIELD OBJECTIVE ' + String(snapshot.stage).padStart(2, '0') + ' OF ' + String(snapshot.total).padStart(2, '0');
     if (objective) objective.textContent = snapshot.complete
-      ? 'All training waves completed.'
-      : 'Tag ' + (snapshot.targetsRequired - snapshot.targetsTagged) + ' more squad units to advance.';
+      ? 'All field objectives are complete.'
+      : (snapshot.nearby ? 'PRESS E TO ACTIVATE ' : 'PROCEED TO ') + snapshot.name + ' // ' + snapshot.description;
     if (snapshot.complete && this.missionOverlay) {
       this.started = false;
       this.missionOverlay.style.display = 'grid';
@@ -436,6 +440,7 @@ export class Game {
     if (event.repeat) return;
     if (event.code === 'KeyR') this.weapon?.reload();
     if (event.code === 'KeyG') this.ordnance?.throwGrenade();
+    if (event.code === 'KeyE') this.objectives?.interact(this.player.position);
 
     if (event.code === 'Digit1') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(1); }
     if (event.code === 'Digit2') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(2); }
