@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  color-scheme: dark;
+  font-family: 'IBM Plex Mono', monospace;
+  background: #090d12;
+  color: #e9eef2;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+body { background: #090d12; }
+canvas { display: block; width: 100%; height: 100%; }
+
+#game-shell { position: fixed; inset: 0; background: #101820; }
+#viewport { position: absolute; inset: 0; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
+.hud-top {
+  position: absolute; top: 24px; left: 28px; right: 28px;
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.brand { font: 700 21px 'Barlow Condensed', sans-serif; letter-spacing: 2.4px; }
+.brand span { color: #c5a56a; }
+.mission-label { margin-top: 4px; color: #87939c; font-size: 9px; letter-spacing: 2px; }
+.status-block { text-align: right; }
+.status-label { color: #84919b; font-size: 9px; letter-spacing: 1.8px; }
+.status-value { margin-top: 5px; font-size: 13px; color: #e4e9ec; }
+.center-reticle {
+  position: absolute; left: 50%; top: 50%; width: 20px; height: 20px;
+  transform: translate(-50%, -50%); opacity: .88;
+}
+.center-reticle::before, .center-reticle::after {
+  content: ''; position: absolute; background: rgba(230,238,242,.9);
+  box-shadow: 0 0 5px rgba(0,0,0,.8);
+}
+.center-reticle::before { left: 9px; top: 2px; width: 2px; height: 16px; }
+.center-reticle::after { left: 2px; top: 9px; width: 16px; height: 2px; }
+.hud-bottom {
+  position: absolute; left: 28px; right: 28px; bottom: 24px;
+  display: flex; justify-content: space-between; align-items: flex-end;
+}
+.panel { padding: 12px 15px; background: rgba(8,13,18,.72); border: 1px solid rgba(190,205,214,.18); backdrop-filter: blur(8px); }
+.panel-label { color: #89969f; font-size: 9px; letter-spacing: 1.8px; }
+.panel-value { margin-top: 4px; font: 700 25px 'Barlow Condensed', sans-serif; letter-spacing: 1px; }
+.panel-value small { color: #8f9ba3; font-size: 13px; }
+.health-value { color: #d9e2dc; }
+.weapon-name { font: 700 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.3px; }
+.weapon-note { margin-top: 4px; color: #8d9aa3; font-size: 9px; }
+.objective {
+  position: absolute; top: 105px; left: 28px; padding-left: 12px;
+  border-left: 2px solid #c5a56a; max-width: 280px;
+}
+.objective-kicker { color: #c5a56a; font-size: 9px; letter-spacing: 2px; }
+.objective-text { margin-top: 5px; font-size: 11px; color: #d6dde1; line-height: 1.6; }
+.toast {
+  position: absolute; left: 50%; top: 58%; transform: translate(-50%, 0);
+  color: #e5c98e; font-size: 10px; letter-spacing: 2px; opacity: 0;
+  transition: opacity .15s ease;
+}
+.toast.visible { opacity: 1; }
+#start-overlay, #pause-overlay {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: linear-gradient(110deg, rgba(4,8,12,.94), rgba(7,13,18,.76));
+  pointer-events: auto;
+}
+.overlay-card { width: min(520px, calc(100% - 40px)); padding: 34px; border: 1px solid rgba(190,205,214,.2); background: rgba(12,19,25,.88); box-shadow: 0 25px 80px rgba(0,0,0,.35); }
+.overlay-kicker { color: #c5a56a; font-size: 10px; letter-spacing: 3px; }
+.overlay-title { margin: 12px 0 4px; font: 800 clamp(38px, 8vw, 64px)/.95 'Barlow Condensed', sans-serif; letter-spacing: 1px; }
+.overlay-copy { margin: 18px 0 24px; color: #aab5bc; font-size: 11px; line-height: 1.8; }
+.action-button {
+  border: 0; padding: 13px 20px; width: 100%; color: #10151a;
+  background: #c5a56a; font: 700 12px 'IBM Plex Mono', monospace;
+  letter-spacing: 1.8px; cursor: pointer; transition: background .15s ease;
+}
+.action-button:hover { background: #e0c28a; }
+.controls-hint { margin-top: 17px; color: #77848d; font-size: 9px; line-height: 1.9; }
+#loading-screen { position: fixed; inset: 0; z-index: 10; display: grid; align-content: center; justify-items: center; background: #090d12; }
+.loading-mark { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid #c5a56a; color: #c5a56a; font: 700 27px 'Barlow Condensed', sans-serif; }
+.loading-title { margin-top: 18px; font: 700 20px 'Barlow Condensed', sans-serif; letter-spacing: 3px; }
+.loading-subtitle { margin-top: 8px; color: #82909a; font-size: 9px; letter-spacing: 2px; }
+.loading-track { margin-top: 22px; width: 180px; height: 2px; background: #26313a; overflow: hidden; }
+.loading-track span { display: block; height: 100%; width: 45%; background: #c5a56a; animation: load 1.1s ease-in-out infinite alternate; }
+@keyframes load { from { transform: translateX(-100%); } to { transform: translateX(220%); } }
+@media (max-width: 600px) {
+  .hud-top { top: 14px; left: 14px; right: 14px; }
+  .hud-bottom { left: 14px; right: 14px; bottom: 14px; }
+  .objective { left: 14px; top: 84px; }
+  .panel { padding: 9px 10px; }
+  .panel-value { font-size: 20px; }
+}
