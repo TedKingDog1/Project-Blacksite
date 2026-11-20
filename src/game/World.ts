@@ -155,6 +155,50 @@ export function createWorld(physics: RAPIER.World): WorldResult {
     scene.add(beacon);
   }
 
+  // Sector-specific objective landmarks: illuminated rings, numbered pylons and painted approach pads.
+  const objectiveColors = [0x79d6e8, 0xd9b879, 0x91d8a5];
+  const sectors = [{ x: -34, z: -12 }, { x: 34, z: -12 }, { x: 0, z: 48 }];
+  sectors.forEach((sector, index) => {
+    const color = objectiveColors[index];
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.08, 40),
+      new THREE.MeshStandardMaterial({ color: 0x343e42, roughness: 0.92, metalness: 0.18 }));
+    pad.position.set(sector.x, 0.05, sector.z); pad.receiveShadow = true; scene.add(pad);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.35, 0.085, 8, 48),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.15, metalness: 0.35, roughness: 0.3 }));
+    ring.rotation.x = Math.PI / 2; ring.position.set(sector.x, 0.16, sector.z); scene.add(ring);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.16, 5.8, 10),
+      new THREE.MeshStandardMaterial({ color: 0x303a40, metalness: 0.72, roughness: 0.4 }));
+    mast.position.set(sector.x, 2.9, sector.z); mast.castShadow = true; scene.add(mast);
+    const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2.2 }));
+    beacon.position.set(sector.x, 5.95, sector.z); scene.add(beacon);
+    const sectorLight = new THREE.PointLight(color, 5, 13, 2);
+    sectorLight.position.set(sector.x, 3.2, sector.z); scene.add(sectorLight);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(8, 0.018, 0.22),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
+    stripe.position.set(sector.x, 0.11, sector.z + 5.2); scene.add(stripe);
+  });
+
+  // Service roads, road dashes and utility cabinets establish the scale of the complex.
+  const asphalt = new THREE.MeshStandardMaterial({ color: 0x343c40, roughness: 0.96 });
+  const roadEdge = new THREE.MeshStandardMaterial({ color: 0x9d9a88, roughness: 0.9 });
+  for (const z of [-46, 46]) {
+    const road = new THREE.Mesh(new THREE.BoxGeometry(116, 0.035, 7), asphalt);
+    road.position.set(0, 0.025, z); road.receiveShadow = true; scene.add(road);
+    for (const x of [-54, -36, -18, 0, 18, 36, 54]) {
+      const dash = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.012, 0.12), roadEdge);
+      dash.position.set(x, 0.05, z); scene.add(dash);
+    }
+  }
+  const cabinetMat = new THREE.MeshStandardMaterial({ color: 0x46545a, metalness: 0.62, roughness: 0.48 });
+  for (const [x, z] of [[-61, -30], [61, -30], [-61, 30], [61, 30]] as const) {
+    const cabinet = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.8, 0.7), cabinetMat);
+    cabinet.position.set(x, 0.9, z); cabinet.castShadow = true; scene.add(cabinet);
+    const indicator = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.025),
+      new THREE.MeshStandardMaterial({ color: 0x8bd7e8, emissive: 0x267d91, emissiveIntensity: 1.4 }));
+    indicator.position.set(x, 1.35, z - 0.36); scene.add(indicator);
+  }
+
   addArchitecturalDetail(scene);
   addAtmosphericEffects(scene);
 
