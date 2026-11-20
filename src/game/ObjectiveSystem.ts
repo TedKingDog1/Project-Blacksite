@@ -85,6 +85,7 @@ export class ObjectiveSystem {
     }
 
     node.activated = true;
+    (node.screen.material as THREE.Material).dispose();
     node.screen.material = new THREE.MeshStandardMaterial({
       color: 0x75d7a1, emissive: 0x238c59, emissiveIntensity: 1.6,
       metalness: 0.2, roughness: 0.35
@@ -128,8 +129,15 @@ export class ObjectiveSystem {
       node.group.traverse((object) => {
         const mesh = object as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose();
-        if (Array.isArray(mesh.material)) mesh.material.forEach(material => material.dispose());
-        else if (mesh.material) mesh.material.dispose();
+        if (Array.isArray(mesh.material)) {
+          mesh.material.forEach(material => {
+            if (material instanceof THREE.SpriteMaterial) material.map?.dispose();
+            material.dispose();
+          });
+        } else if (mesh.material) {
+          if (mesh.material instanceof THREE.SpriteMaterial) mesh.material.map?.dispose();
+          mesh.material.dispose();
+        }
       });
     }
     this.nodes.length = 0;
@@ -137,7 +145,8 @@ export class ObjectiveSystem {
 
   private addNode(name: string, description: string, x: number, z: number, color: number): void {
     const group = new THREE.Group();
-    group.position.set(x, 0, z);
+    // Offset the terminal from the sector mast already placed at the pad center.
+    group.position.set(x + 2.2, 0, z);
 
     const dark = new THREE.MeshStandardMaterial({ color: 0x26353c, metalness: 0.72, roughness: 0.38 });
     const trim = new THREE.MeshStandardMaterial({ color: 0x8b9697, metalness: 0.62, roughness: 0.42 });
@@ -209,7 +218,7 @@ export class ObjectiveSystem {
 
     this.scene.add(group);
     this.nodes.push({
-      name, description, position: new THREE.Vector3(x, 0, z), color,
+      name, description, position: new THREE.Vector3(x + 2.2, 0, z), color,
       group, ring, beacon, light, screen, activated: false
     });
   }
