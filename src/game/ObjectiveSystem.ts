@@ -49,7 +49,7 @@ export class ObjectiveSystem {
     this.publish();
   }
 
-  update(delta: number, playerPosition: THREE.Vector3): void {
+  update(_delta: number, playerPosition: THREE.Vector3): void {
     const node = this.nodes[this.current];
     this.nearby = !this.complete && !!node &&
       new THREE.Vector2(playerPosition.x - node.position.x, playerPosition.z - node.position.z).length() <= this.interactionRange;
