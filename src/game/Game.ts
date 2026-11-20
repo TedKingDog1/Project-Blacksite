@@ -27,6 +27,8 @@ export class Game {
   private physicsAccumulator = 0;
   private startOverlay?: HTMLDivElement;
   private pauseOverlay?: HTMLDivElement;
+  private deathOverlay?: HTMLDivElement;
+  private defeated = false;
 
   constructor(root: HTMLDivElement) {
     this.root = root;
@@ -82,7 +84,7 @@ export class Game {
           <div class="toast" id="toast"></div>
           <div class="hud-bottom">
             <div class="panel"><div class="panel-label">VITALS</div><div class="panel-value health-value"><span id="health-value">100</span><small> / 100</small></div></div>
-            <div class="panel" style="text-align:right"><div class="panel-label">EQUIPPED</div><div class="weapon-name">PULSE PROJECTOR</div><div class="weapon-note">ENERGY CELL // NON-LETHAL SIMULATION</div><div class="panel-value" id="ammo-value">24 / 24</div></div>
+            <div class="panel" style="text-align:right"><div class="panel-label">EQUIPPED</div><div class="weapon-name" id="weapon-name">PULSE PROJECTOR</div><div class="weapon-note" id="weapon-note">BALANCED ENERGY CELL</div><div class="panel-value" id="ammo-value">24 / 24</div></div>
             <div class="panel" style="text-align:right"><div class="panel-label">TARGET SCORE</div><div class="panel-value" id="score-value">00000</div></div>
           </div>
         </div>
@@ -92,7 +94,7 @@ export class Game {
             <div class="overlay-title">BLACKSITE</div>
             <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
             <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
-            <div class="controls-hint">WASD MOVE &nbsp;·&nbsp; MOUSE LOOK &nbsp;·&nbsp; SPACE JUMP<br>LEFT CLICK PULSE &nbsp;·&nbsp; R RECHARGE &nbsp;·&nbsp; ESC PAUSE</div>
+            <div class="controls-hint">WASD MOVE &nbsp;·&nbsp; MOUSE LOOK &nbsp;·&nbsp; SPACE JUMP<br>LEFT CLICK FIRE &nbsp;·&nbsp; 1–3 EQUIP &nbsp;·&nbsp; R RECHARGE &nbsp;·&nbsp; ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
@@ -103,15 +105,25 @@ export class Game {
             <button class="action-button" id="resume-button">RESUME SIMULATION</button>
           </div>
         </div>
+        <div id="death-overlay" style="display:none">
+          <div class="overlay-card">
+            <div class="overlay-kicker">FIELD TEST 001 // SESSION INTERRUPTED</div>
+            <div class="overlay-title">SIMULATION ENDED</div>
+            <div class="overlay-copy">Your training run has ended. Re-enter the range to restore your vitals and continue the exercise.</div>
+            <button class="action-button" id="respawn-button">RE-ENTER TRAINING RANGE</button>
+            <div class="controls-hint">VITALS RESTORED ON RE-ENTRY</div>
+          </div>
+        </div>
       </div>`;
     this.hud = new HUD(this.root.querySelector<HTMLDivElement>('#hud')!);
     this.startOverlay = this.root.querySelector<HTMLDivElement>('#start-overlay')!;
     this.pauseOverlay = this.root.querySelector<HTMLDivElement>('#pause-overlay')!;
+    this.deathOverlay = this.root.querySelector<HTMLDivElement>('#death-overlay')!;
   }
 
   private initializeEngine(): void {
     const viewport = this.root.querySelector<HTMLDivElement>('#viewport')!;
-    this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 220);
+    this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 360);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -151,12 +163,18 @@ export class Game {
         this.score += amount;
         this.hud?.setScore(this.score);
       },
-      onToast: (message) => this.hud?.showToast(message)
+      onToast: (message) => this.hud?.showToast(message),
+      onWeaponChanged: (name, note) => this.hud?.setWeapon(name, note)
     });
 
     this.combat = new CombatSystem(this.scene, this.player, this.drones, {
       onHealthChanged: (health) => this.hud?.setHealth(health),
-      onToast: (message) => this.hud?.showToast(message)
+      onToast: (message) => this.hud?.showToast(message),
+      onDefeated: () => {
+        this.defeated = true;
+        this.deathOverlay!.style.display = 'grid';
+        this.player?.controls.unlock();
+      }
     });
   }
 
@@ -169,6 +187,12 @@ export class Game {
     });
     this.root.querySelector<HTMLButtonElement>('#resume-button')?.addEventListener('click', () => {
       this.pauseOverlay!.style.display = 'none';
+      this.player?.controls.lock();
+    });
+    this.root.querySelector<HTMLButtonElement>('#respawn-button')?.addEventListener('click', () => {
+      this.combat?.respawn();
+      this.defeated = false;
+      this.deathOverlay!.style.display = 'none';
       this.player?.controls.lock();
     });
 
@@ -226,7 +250,11 @@ export class Game {
   };
 
   private onGameKeyDown = (event: KeyboardEvent): void => {
-    if (event.code === 'KeyR' && this.started && this.player?.controls.isLocked) this.weapon?.reload();
+    if (!this.started || !this.player?.controls.isLocked) return;
+    if (event.code === 'KeyR') this.weapon?.reload();
+    if (event.code === 'Digit1') this.weapon?.selectWeapon(1);
+    if (event.code === 'Digit2') this.weapon?.selectWeapon(2);
+    if (event.code === 'Digit3') this.weapon?.selectWeapon(3);
   };
 
   private onLock = (): void => {
@@ -234,7 +262,7 @@ export class Game {
   };
 
   private onUnlock = (): void => {
-    if (!this.started || this.disposed || !this.pauseOverlay) return;
+    if (!this.started || this.disposed || !this.pauseOverlay || this.defeated) return;
     this.pauseOverlay.style.display = 'grid';
   };
 
