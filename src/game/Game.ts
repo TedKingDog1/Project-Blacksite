@@ -19,13 +19,12 @@ export class Game {
   private weapon?: PulseProjector;
   private hud?: HUD;
   private drones: TrainingDrone[] = [];
-  private animationFrame = 0;
   private score = 0;
   private started = false;
   private disposed = false;
+  private physicsAccumulator = 0;
   private startOverlay?: HTMLDivElement;
   private pauseOverlay?: HTMLDivElement;
-  private pointerWasLocked = false;
 
   constructor(root: HTMLDivElement) {
     this.root = root;
@@ -50,12 +49,17 @@ export class Game {
 
   dispose(): void {
     this.disposed = true;
-    cancelAnimationFrame(this.animationFrame);
     this.renderer?.setAnimationLoop(null);
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('keydown', this.onGameKeyDown);
+    this.renderer?.domElement.removeEventListener('click', this.onCanvasClick);
+    this.player?.controls.removeEventListener('lock', this.onLock);
+    this.player?.controls.removeEventListener('unlock', this.onUnlock);
     this.player?.dispose();
     this.weapon?.dispose();
     this.hud?.dispose();
-    this.drones.forEach((drone) => drone.dispose(this.scene!));
+    if (this.scene) this.drones.forEach((drone) => drone.dispose(this.scene!));
     this.input.dispose();
     this.renderer?.dispose();
     this.physics?.free();
@@ -104,7 +108,6 @@ export class Game {
 
   private initializeEngine(): void {
     const viewport = this.root.querySelector<HTMLDivElement>('#viewport')!;
-    this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 220);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
@@ -175,13 +178,21 @@ export class Game {
     const elapsed = this.clock.elapsedTime;
 
     if (this.started && this.player.controls.isLocked) {
-      this.player.applyInput();
-      this.physics.timestep = Math.min(delta, 1 / 30);
-      this.physics.step();
+      this.physicsAccumulator += delta;
+      const fixedStep = 1 / 60;
+      while (this.physicsAccumulator >= fixedStep) {
+        this.player.applyInput();
+        this.physics.timestep = fixedStep;
+        this.physics.step();
+        this.physicsAccumulator -= fixedStep;
+      }
+
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
       const playerPosition = this.player.position;
       this.drones.forEach((drone) => drone.update(delta, elapsed, playerPosition));
+    } else {
+      this.physicsAccumulator = 0;
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -210,7 +221,6 @@ export class Game {
   };
 
   private onLock = (): void => {
-    this.pointerWasLocked = true;
     if (this.pauseOverlay) this.pauseOverlay.style.display = 'none';
   };
 
