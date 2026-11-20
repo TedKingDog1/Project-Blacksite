@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { addArchitecturalDetail, createConcreteTexture, createSkyDome } from './Graphics';
 
 export interface WorldResult {
   scene: THREE.Scene;
@@ -8,24 +9,32 @@ export interface WorldResult {
 
 export function createWorld(physics: RAPIER.World): WorldResult {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x9aa7ad);
-  scene.fog = new THREE.FogExp2(0x9aa7ad, 0.0045);
+  scene.background = null;
+  scene.fog = new THREE.Fog(0x9a9c96, 105, 235);
+  createSkyDome(scene);
 
-  const hemi = new THREE.HemisphereLight(0xdce8ee, 0x303b3b, 2.0);
+  const hemi = new THREE.HemisphereLight(0xdce8ee, 0x303b3b, 1.35);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffe5bf, 3.0);
+  const sun = new THREE.DirectionalLight(0xffdfb5, 3.2);
   sun.position.set(-35, 55, 25);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -70;
-  sun.shadow.camera.right = 70;
-  sun.shadow.camera.top = 70;
-  sun.shadow.camera.bottom = -70;
+  sun.shadow.camera.left = -92;
+  sun.shadow.camera.right = 92;
+  sun.shadow.camera.top = 92;
+  sun.shadow.camera.bottom = -92;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 220;
+  sun.shadow.normalBias = 0.035;
   sun.shadow.bias = -0.00025;
   scene.add(sun);
 
-  const groundMat = new THREE.MeshStandardMaterial({ color: 0x626b6d, roughness: 0.94 });
+  const concreteTexture = createConcreteTexture();
+  const groundMat = new THREE.MeshStandardMaterial({
+    color: 0x9b9d98, map: concreteTexture, bumpMap: concreteTexture,
+    bumpScale: 0.035, roughness: 0.96, metalness: 0.02
+  });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -145,6 +154,8 @@ export function createWorld(physics: RAPIER.World): WorldResult {
     beacon.position.set(x, 4.2, z);
     scene.add(beacon);
   }
+
+  addArchitecturalDetail(scene);
 
   const grid = new THREE.GridHelper(240, 120, 0x657173, 0x737c7d);
   grid.position.y = 0.012;

@@ -123,15 +123,16 @@ export class Game {
 
   private initializeEngine(): void {
     const viewport = this.root.querySelector<HTMLDivElement>('#viewport')!;
-    this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 360);
+    this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 900);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.shadowMap.autoUpdate = true;
     viewport.appendChild(this.renderer.domElement);
   }
 
