@@ -114,7 +114,7 @@ export class Game {
             <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
             <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
             <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
-            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>E INTERACT · ESC PAUSE</div>
+            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 PRIMARY · 4 RPG · 5 GRENADE LAUNCHER · G HAND GRENADE · R RECHARGE · E INTERACT · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
@@ -269,7 +269,6 @@ export class Game {
       this.combat?.respawn();
       this.ordnance?.reset();
       this.objectives?.reset();
-      this.ordnance?.reset();
       this.score = 0;
       this.hud?.setScore(0);
       this.defeated = false;
@@ -311,8 +310,8 @@ export class Game {
       this.weapon?.update(delta);
       this.ordnance?.update(delta, this.player.position);
       this.combat?.update(delta);
-      this.objectives?.update(delta, playerPosition);
       const playerPosition = this.player.position;
+      this.objectives?.update(delta, playerPosition);
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
       const squadCenter = new THREE.Vector3(
         Math.cos(patrolPhase) * 17,
