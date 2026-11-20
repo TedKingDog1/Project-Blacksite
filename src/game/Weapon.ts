@@ -133,6 +133,7 @@ export class PulseProjector {
   }
 
   setAiming(value: boolean): void { this.aiming = value; }
+  getAimFov(): number { return this.loadout.optic === 'precision' ? 46 : 54; }
   setTriggerHeld(value: boolean): void { this.triggerHeld = value; }
 
   fire(): void {
@@ -144,13 +145,12 @@ export class PulseProjector {
     }
 
     this.ammo--;
-    const rateUpgrade = this.loadout.capacitor === 'extended' ? 1.08 : 1;
-    this.cooldown = this.profile.cooldown / rateUpgrade;
+    this.cooldown = this.profile.cooldown;
     this.events.onAmmoChanged(this.ammo, this.capacity);
 
     const hits = new Set<TrainingDrone>();
     const rayCount = this.profile.rays;
-    const aimSpread = this.aiming ? 0.28 : 1;
+    const aimSpread = this.aiming ? (this.loadout.optic === 'precision' ? 0.18 : 0.28) : 1;
     const stabilizerSpread = this.loadout.stabilizer ? 0.65 : 1;
     const spread = this.profile.spread * aimSpread * stabilizerSpread;
     for (let i = 0; i < rayCount; i++) {
