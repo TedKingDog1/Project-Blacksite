@@ -71,11 +71,11 @@ export class TrainingDrone {
     this.glow.intensity = 2.0 + Math.sin(elapsed * 4 + this.phase) * 0.6;
   }
 
-  shouldFire(delta: number, player: THREE.Vector3): boolean {
+  shouldFire(delta: number, player: THREE.Vector3, intensity = 1): boolean {
     if (!this.active || this.group.position.distanceTo(player) > 30) return false;
     this.attackCooldown -= delta;
     if (this.attackCooldown > 0) return false;
-    this.attackCooldown = 2.4 + (Math.abs(Math.sin(this.phase)) * 0.8);
+    this.attackCooldown = (2.4 + (Math.abs(Math.sin(this.phase)) * 0.8)) / Math.max(1, intensity);
     return true;
   }
 
