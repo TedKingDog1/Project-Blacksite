@@ -4,6 +4,8 @@ import { Input } from './Input';
 import { Player } from './Player';
 import { createWorld } from './World';
 import { TrainingDrone } from './Drone';
+import { SquadBot } from './SquadBot';
+import { MissionDirector, type MissionSnapshot } from './MissionDirector';
 import { PulseProjector, type WeaponLoadout } from './Weapon';
 import { HUD } from './HUD';
 import { CombatSystem } from './CombatSystem';
@@ -20,6 +22,12 @@ export class Game {
   private weapon?: PulseProjector;
   private hud?: HUD;
   private combat?: CombatSystem;
+  private mission?: MissionDirector;
+  private readonly squadOffsets = [
+    new THREE.Vector3(-2, 0, -3), new THREE.Vector3(2, 0, -3),
+    new THREE.Vector3(-4, 0, 0), new THREE.Vector3(4, 0, 0),
+    new THREE.Vector3(-2, 0, 3), new THREE.Vector3(2, 0, 3)
+  ];
   private drones: TrainingDrone[] = [];
   private score = 0;
   private started = false;
@@ -28,6 +36,7 @@ export class Game {
   private startOverlay?: HTMLDivElement;
   private pauseOverlay?: HTMLDivElement;
   private deathOverlay?: HTMLDivElement;
+  private missionOverlay?: HTMLDivElement;
   private loadoutOverlay?: HTMLDivElement;
   private loadoutReturn: 'start' | 'pause' = 'start';
   private isAiming = false;
@@ -84,7 +93,7 @@ export class Game {
             <div><div class="brand">PROJECT <span>BLACKSITE</span></div><div class="mission-label">TRAINING COMPLEX // SECTOR 04</div></div>
             <div class="status-block"><div class="status-label">SIMULATION STATUS</div><div class="status-value">LIVE <span style="color:#c5a56a">●</span></div></div>
           </div>
-          <div class="objective"><div class="objective-kicker">TRAINING DIRECTIVE 01</div><div class="objective-text">Navigate the compound and tag the autonomous training drones. Each target requires three successful pulse hits.</div></div>
+          <div class="objective"><div class="objective-kicker" id="mission-kicker">MISSION 01 // WAVE 1 OF 3</div><div class="objective-text" id="mission-objective">Tag all 6 squad units to advance. Complete all three waves.</div></div>
           <div class="center-reticle"></div>
           <div class="toast" id="toast"></div>
           <div class="hud-bottom">
@@ -137,6 +146,14 @@ export class Game {
             <button class="secondary-button" id="cancel-loadout">RETURN</button>
           </div>
         </div>
+        <div id="mission-overlay" style="display:none">
+          <div class="overlay-card">
+            <div class="overlay-kicker">PROJECT BLACKSITE // FIELD TEST COMPLETE</div>
+            <div class="overlay-title">MISSION CLEAR</div>
+            <div class="overlay-copy">All three training waves have been completed. Mission performance logged.</div>
+            <button class="action-button" id="replay-mission">RUN SIMULATION AGAIN</button>
+          </div>
+        </div>
         <div id="death-overlay" style="display:none">
           <div class="overlay-card">
             <div class="overlay-kicker">FIELD TEST 001 // SESSION INTERRUPTED</div>
@@ -151,6 +168,7 @@ export class Game {
     this.startOverlay = this.root.querySelector<HTMLDivElement>('#start-overlay')!;
     this.pauseOverlay = this.root.querySelector<HTMLDivElement>('#pause-overlay')!;
     this.deathOverlay = this.root.querySelector<HTMLDivElement>('#death-overlay')!;
+    this.missionOverlay = this.root.querySelector<HTMLDivElement>('#mission-overlay')!;
     this.loadoutOverlay = this.root.querySelector<HTMLDivElement>('#loadout-overlay')!;
   }
 
@@ -158,7 +176,7 @@ export class Game {
     const viewport = this.root.querySelector<HTMLDivElement>('#viewport')!;
     this.camera = new THREE.PerspectiveCamera(76, window.innerWidth / window.innerHeight, 0.1, 900);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -181,21 +199,21 @@ export class Game {
 
     this.player = new Player(this.camera, this.renderer.domElement, this.physics, this.input);
 
-    const dronePositions = [
-      new THREE.Vector3(-14, 3.2, -16),
-      new THREE.Vector3(0, 4.2, -22),
-      new THREE.Vector3(15, 3.5, -15),
-      new THREE.Vector3(-24, 3.4, 5),
-      new THREE.Vector3(24, 4, 5),
-      new THREE.Vector3(0, 3.8, 18)
-    ];
-    this.drones = dronePositions.map((position, index) => new TrainingDrone(this.scene!, position, index));
+    const squadCenter = new THREE.Vector3(0, 1.25, -14);
+    this.drones = this.squadOffsets.map((offset, index) =>
+      new SquadBot(this.scene!, squadCenter.clone().add(offset), index)
+    );
+    this.mission = new MissionDirector(
+      (snapshot) => this.updateMissionDisplay(snapshot),
+      (message) => this.hud?.showToast(message)
+    );
 
     this.weapon = new PulseProjector(this.camera, this.scene, this.drones, {
       onAmmoChanged: (current, capacity) => this.hud?.setAmmo(current, capacity),
       onScore: (amount) => {
         this.score += amount;
         this.hud?.setScore(this.score);
+        this.mission?.targetTagged();
       },
       onToast: (message) => this.hud?.showToast(message),
       onWeaponChanged: (name, note) => this.hud?.setWeapon(name, note)
@@ -223,8 +241,19 @@ export class Game {
       this.pauseOverlay!.style.display = 'none';
       this.player?.controls.lock();
     });
+    this.root.querySelector<HTMLButtonElement>('#replay-mission')?.addEventListener('click', () => {
+      this.mission?.reset();
+      this.score = 0;
+      this.hud?.setScore(0);
+      this.missionOverlay!.style.display = 'none';
+      this.started = true;
+      this.player?.controls.lock();
+    });
     this.root.querySelector<HTMLButtonElement>('#respawn-button')?.addEventListener('click', () => {
       this.combat?.respawn();
+      this.mission?.reset();
+      this.score = 0;
+      this.hud?.setScore(0);
       this.defeated = false;
       this.deathOverlay!.style.display = 'none';
       this.player?.controls.lock();
@@ -264,7 +293,15 @@ export class Game {
       this.weapon?.update(delta);
       this.combat?.update(delta);
       const playerPosition = this.player.position;
-      this.drones.forEach((drone) => drone.update(delta, elapsed, playerPosition));
+      const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
+      const squadCenter = new THREE.Vector3(
+        Math.cos(patrolPhase) * 17,
+        1.25,
+        -12 + Math.sin(patrolPhase) * 18
+      );
+      this.drones.forEach((drone, index) =>
+        drone.update(delta, elapsed, playerPosition, squadCenter.clone().add(this.squadOffsets[index]))
+      );
     } else {
       this.physicsAccumulator = 0;
     }
@@ -275,12 +312,26 @@ export class Game {
     this.renderer.render(this.scene, this.camera);
   }
 
+  private updateMissionDisplay(snapshot: MissionSnapshot): void {
+    const kicker = this.root.querySelector<HTMLElement>('#mission-kicker');
+    const objective = this.root.querySelector<HTMLElement>('#mission-objective');
+    if (kicker) kicker.textContent = 'MISSION 01 // WAVE ' + snapshot.wave + ' OF ' + snapshot.totalWaves;
+    if (objective) objective.textContent = snapshot.complete
+      ? 'All training waves completed.'
+      : 'Tag ' + (snapshot.targetsRequired - snapshot.targetsTagged) + ' more squad units to advance.';
+    if (snapshot.complete && this.missionOverlay) {
+      this.started = false;
+      this.missionOverlay.style.display = 'grid';
+      this.player?.controls.unlock();
+    }
+  }
+
   private onResize = (): void => {
     if (!this.camera || !this.renderer) return;
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
   };
 
   private onCanvasClick = (): void => {
