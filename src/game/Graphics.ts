@@ -116,9 +116,6 @@ export function addArchitecturalDetail(scene: THREE.Scene): void {
       }
       add(cx + side * (halfW + 0.035), 2.9, cz, 0.08, 5.4, depth, concrete);
     }
-    for (const side of [-1, 1]) {
-      add(cx + side * (halfW + 0.035), 2.9, cz, 0.08, 5.4, depth, concrete);
-    }
     add(cx, 0.95, cz + halfD + 0.08, width * 0.42, 1.9, 0.12, trim);
     add(cx, 1.0, cz + halfD + 0.16, width * 0.37, 1.65, 0.05, glass);
     add(cx, 2.05, cz + halfD + 0.2, width * 0.4, 0.12, 0.08, amber);
