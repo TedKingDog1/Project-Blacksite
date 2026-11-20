@@ -269,7 +269,7 @@ export class Game {
       this.physicsAccumulator = 0;
     }
 
-    const targetFov = this.isAiming ? 54 : 76;
+    const targetFov = this.isAiming ? (this.weapon?.getAimFov() ?? 54) : 76;
     this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 11);
     this.camera.updateProjectionMatrix();
     this.renderer.render(this.scene, this.camera);
