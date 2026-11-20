@@ -61,25 +61,22 @@ export class PulseProjector {
 
     this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
     this.raycaster.far = 65;
-    const meshes: THREE.Object3D[] = [];
-    for (const target of this.targets) {
-      if (target.group.visible) target.group.traverse((object) => {
-        if (object instanceof THREE.Mesh) meshes.push(object);
-      });
-    }
 
-    const hit = this.raycaster.intersectObjects(meshes, false)[0];
+    // Raycast the whole visible scene so walls and cover correctly block target tags.
+    const intersections = this.raycaster.intersectObjects(this.scene.children, true);
+    const hit = intersections[0];
     const end = hit?.point ?? this.raycaster.ray.origin.clone().addScaledVector(this.raycaster.ray.direction, 35);
     this.drawPulse(end);
 
-    if (hit) {
-      const drone = hit.object.userData.drone as TrainingDrone | undefined;
-      if (drone?.registerHit()) {
-        this.events.onScore(100);
-        this.events.onToast('TARGET TAGGED  +100');
-      } else if (drone) {
-        this.events.onToast('TARGET HIT');
-      }
+    if (!hit) return;
+    const drone = hit.object.userData.drone as TrainingDrone | undefined;
+    if (!drone || !this.targets.includes(drone)) return;
+
+    if (drone.registerHit()) {
+      this.events.onScore(100);
+      this.events.onToast('TARGET TAGGED  +100');
+    } else {
+      this.events.onToast('TARGET HIT');
     }
   }
 
@@ -111,7 +108,6 @@ export class PulseProjector {
     });
 
     const housing = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.16, 0.48), bodyMaterial);
-    housing.position.set(0, 0, 0);
     this.model.add(housing);
 
     const emitter = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.12, 16), trimMaterial);
