@@ -24,6 +24,7 @@ export class HUD {
 
   setHealth(value: number): void {
     this.health.textContent = String(value).padStart(3, '0');
+    this.health.style.color = value <= 30 ? '#ef806b' : '#d8e5e8';
   }
 
   showToast(message: string): void {
