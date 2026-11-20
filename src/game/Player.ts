@@ -10,7 +10,8 @@ export class Player {
   private readonly forward = new THREE.Vector3();
   private readonly right = new THREE.Vector3();
   private readonly movement = new THREE.Vector3();
-  private canJump = false;
+  private readonly worldUp = new THREE.Vector3(0, 1, 0);
+  private jumpWasDown = false;
   private readonly speed = 7.2;
 
   constructor(
@@ -41,7 +42,7 @@ export class Player {
     this.controls.getDirection(this.forward);
     this.forward.y = 0;
     this.forward.normalize();
-    this.right.crossVectors(this.forward, new THREE.Vector3(0, 1, 0)).normalize();
+    this.right.crossVectors(this.forward, this.worldUp).normalize();
 
     this.movement.set(0, 0, 0);
     if (this.input.isDown('KeyW')) this.movement.add(this.forward);
@@ -51,15 +52,16 @@ export class Player {
 
     if (this.movement.lengthSq() > 0) this.movement.normalize().multiplyScalar(this.speed);
 
+    const spaceDown = this.input.isDown('Space');
+    const jumpPressed = spaceDown && !this.jumpWasDown;
+    this.jumpWasDown = spaceDown;
+
+    // The capsule's center rests roughly 0.9 units above the ground plane.
     const grounded = this.body.translation().y <= 1.18;
-    this.canJump = grounded;
     let vertical = velocity.y;
 
     if (grounded && vertical < 0) vertical = -0.5;
-    if (this.canJump && this.input.isDown('Space')) {
-      vertical = 5.2;
-      this.canJump = false;
-    }
+    if (grounded && jumpPressed) vertical = 5.2;
 
     this.body.setLinvel({ x: this.movement.x, y: vertical, z: this.movement.z }, true);
   }
