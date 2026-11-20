@@ -233,7 +233,7 @@ export class ObjectiveSystem {
     ring.rotation.x = Math.PI / 2;
     ring.visible = false;
 
-    const flagPole = add(new THREE.CylinderGeometry(0.035, 0.05, 2.1, 6), wood, -1.05, 1.05, 0.72);
+    add(new THREE.CylinderGeometry(0.035, 0.05, 2.1, 6), wood, -1.05, 1.05, 0.72);
     const flagShape = new THREE.Shape();
     flagShape.moveTo(0, 0.48);
     flagShape.lineTo(0.78, 0.22);
