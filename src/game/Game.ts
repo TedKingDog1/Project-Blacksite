@@ -30,6 +30,7 @@ export class Game {
   ];
   private drones: TrainingDrone[] = [];
   private score = 0;
+  private missionWave = 1;
   private started = false;
   private disposed = false;
   private physicsAccumulator = 0;
@@ -291,7 +292,7 @@ export class Game {
 
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
-      this.combat?.update(delta);
+      this.combat?.update(delta, 1 + (this.missionWave - 1) * 0.22);
       const playerPosition = this.player.position;
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
       const squadCenter = new THREE.Vector3(
@@ -315,6 +316,7 @@ export class Game {
   private updateMissionDisplay(snapshot: MissionSnapshot): void {
     const kicker = this.root.querySelector<HTMLElement>('#mission-kicker');
     const objective = this.root.querySelector<HTMLElement>('#mission-objective');
+    this.missionWave = snapshot.wave;
     if (kicker) kicker.textContent = 'MISSION 01 // WAVE ' + snapshot.wave + ' OF ' + snapshot.totalWaves;
     if (objective) objective.textContent = snapshot.complete
       ? 'All training waves completed.'
