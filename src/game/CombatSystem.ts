@@ -36,12 +36,12 @@ export class CombatSystem {
     this.events.onHealthChanged(this.health);
   }
 
-  update(delta: number): void {
+  update(delta: number, intensity = 1): void {
     if (this.defeated) return;
     this.damageCooldown = Math.max(0, this.damageCooldown - delta);
     const playerPosition = this.player.position;
     for (const drone of this.drones) {
-      if (drone.shouldFire(delta, playerPosition)) this.launchPulse(drone.position, playerPosition);
+      if (drone.shouldFire(delta, playerPosition, intensity)) this.launchPulse(drone.position, playerPosition);
     }
     for (let i = this.pulses.length - 1; i >= 0; i--) {
       const pulse = this.pulses[i];

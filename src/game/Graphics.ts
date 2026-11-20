@@ -139,3 +139,49 @@ export function addArchitecturalDetail(scene: THREE.Scene): void {
     for (let y = 0.55; y < 3.2; y += 0.42) add(x, y, z - 0.17, 5.8, 0.045, 0.06, concrete);
   }
 }
+
+/** Low-cost dust motes and soft industrial light shafts for added depth. */
+export function addAtmosphericEffects(scene: THREE.Scene): void {
+  const count = 520;
+  const positions = new Float32Array(count * 3);
+  let seed = 48271;
+  const random = (): number => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let i = 0; i < count; i++) {
+    positions[i * 3] = (random() - 0.5) * 145;
+    positions[i * 3 + 1] = 0.35 + random() * 12;
+    positions[i * 3 + 2] = (random() - 0.5) * 145;
+  }
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const dustMaterial = new THREE.PointsMaterial({
+    color: 0xe0d7c5,
+    size: 0.075,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    sizeAttenuation: true
+  });
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  dust.frustumCulled = false;
+  scene.add(dust);
+
+  const shaftMaterial = new THREE.MeshBasicMaterial({
+    color: 0xf0d4a4,
+    transparent: true,
+    opacity: 0.045,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+  for (const [x, z] of [[-37, -35], [37, -35], [-37, 35], [37, 35]] as const) {
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2, 4.2, 8, 12, 1, true),
+      shaftMaterial
+    );
+    shaft.position.set(x, 4.1, z);
+    shaft.renderOrder = 1;
+    scene.add(shaft);
+  }
+}

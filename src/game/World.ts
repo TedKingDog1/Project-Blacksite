@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { addArchitecturalDetail, createConcreteTexture, createSkyDome } from './Graphics';
+import { addArchitecturalDetail, addAtmosphericEffects, createConcreteTexture, createSkyDome } from './Graphics';
 
 export interface WorldResult {
   scene: THREE.Scene;
@@ -156,6 +156,7 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   }
 
   addArchitecturalDetail(scene);
+  addAtmosphericEffects(scene);
 
   const grid = new THREE.GridHelper(240, 120, 0x657173, 0x737c7d);
   grid.position.y = 0.012;

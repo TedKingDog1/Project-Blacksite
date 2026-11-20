@@ -60,7 +60,7 @@ canvas { display: block; width: 100%; height: 100%; }
   transition: opacity .15s ease;
 }
 .toast.visible { opacity: 1; }
-#start-overlay, #pause-overlay, #death-overlay {
+#start-overlay, #pause-overlay, #death-overlay, #mission-overlay {
   position: absolute; inset: 0; display: grid; place-items: center;
   background: linear-gradient(110deg, rgba(4,8,12,.94), rgba(7,13,18,.76));
   pointer-events: auto;
@@ -166,3 +166,22 @@ canvas { display: block; width: 100%; height: 100%; }
   .loadout-field:first-child { grid-column: auto; }
   .loadout-card { padding: 20px; }
 }
+
+#mission-overlay {
+  background: radial-gradient(ellipse at center, rgba(20,43,48,.86), rgba(5,9,13,.97));
+}
+#mission-overlay .overlay-card {
+  border-color: rgba(111,194,185,.42);
+  box-shadow: 0 25px 90px rgba(0,0,0,.55), 0 0 50px rgba(65,153,153,.08);
+}
+#mission-overlay .overlay-kicker { color: #8ed5c8; }
+#mission-overlay .overlay-title { color: #e3f2ed; }
+#mission-overlay .action-button { background: #8ec9bb; }
+#mission-overlay .action-button:hover { background: #b0e0d4; }
+.objective {
+  padding: 13px 15px;
+  background: linear-gradient(90deg, rgba(7,13,17,.78), rgba(7,13,17,.24));
+  border-left-width: 2px;
+  backdrop-filter: blur(5px);
+}
+.objective-kicker { font-weight: 600; }
