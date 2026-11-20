@@ -4,7 +4,7 @@ import { Input } from './Input';
 import { Player } from './Player';
 import { createWorld } from './World';
 import { TrainingDrone } from './Drone';
-import { PulseProjector } from './Weapon';
+import { PulseProjector, WeaponLoadout } from './Weapon';
 import { HUD } from './HUD';
 import { CombatSystem } from './CombatSystem';
 
@@ -28,6 +28,9 @@ export class Game {
   private startOverlay?: HTMLDivElement;
   private pauseOverlay?: HTMLDivElement;
   private deathOverlay?: HTMLDivElement;
+  private loadoutOverlay?: HTMLDivElement;
+  private loadoutReturn: 'start' | 'pause' = 'start';
+  private isAiming = false;
   private defeated = false;
 
   constructor(root: HTMLDivElement) {
@@ -56,6 +59,8 @@ export class Game {
     this.renderer?.setAnimationLoop(null);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('mouseup', this.onMouseUp);
+    window.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('keydown', this.onGameKeyDown);
     this.renderer?.domElement.removeEventListener('click', this.onCanvasClick);
     this.player?.controls.removeEventListener('lock', this.onLock);
@@ -94,7 +99,8 @@ export class Game {
             <div class="overlay-title">BLACKSITE</div>
             <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
             <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
-            <div class="controls-hint">WASD MOVE &nbsp;·&nbsp; MOUSE LOOK &nbsp;·&nbsp; SPACE JUMP<br>LEFT CLICK FIRE &nbsp;·&nbsp; 1–3 EQUIP &nbsp;·&nbsp; R RECHARGE &nbsp;·&nbsp; ESC PAUSE</div>
+            <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
+            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 EQUIP · R RECHARGE · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
@@ -103,6 +109,32 @@ export class Game {
             <div class="overlay-title">ON HOLD</div>
             <div class="overlay-copy">The training range is waiting.</div>
             <button class="action-button" id="resume-button">RESUME SIMULATION</button>
+            <button class="secondary-button" id="pause-loadout">EDIT LOADOUT</button>
+          </div>
+        </div>
+
+        <div id="loadout-overlay" style="display:none">
+          <div class="loadout-card">
+            <div class="overlay-kicker">ARMORY // CONFIGURATION BAY</div>
+            <div class="overlay-title loadout-title">WEAPON SYSTEMS</div>
+            <div class="loadout-grid">
+              <label class="loadout-field">PRIMARY PLATFORM
+                <select id="loadout-weapon"><option value="1">01 // PULSE PROJECTOR</option><option value="2">02 // ARC REPEATER</option><option value="3">03 // NOVA EMITTER</option></select>
+              </label>
+              <label class="loadout-field">SIGHT MODULE
+                <select id="loadout-optic"><option value="reflex">Reflex sight</option><option value="precision">Precision optic</option></select>
+              </label>
+              <label class="loadout-field">ENERGY CAPACITOR
+                <select id="loadout-capacitor"><option value="standard">Standard cell</option><option value="extended">Extended cell (+25% capacity)</option></select>
+              </label>
+            </div>
+            <div class="upgrade-list">
+              <label class="upgrade-option"><input id="upgrade-stabilizer" type="checkbox"><span><strong>STABILIZATION ARRAY</strong><small>Reduces energy spread for more consistent shots.</small></span></label>
+              <label class="upgrade-option" id="full-auto-option"><input id="upgrade-full-auto" type="checkbox"><span><strong>FULL-AUTO CONVERTER</strong><small>Allows continuous energy discharge while holding fire. Not compatible with Nova burst mode.</small></span></label>
+            </div>
+            <div class="loadout-note">Changes apply when you confirm the configuration.</div>
+            <button class="action-button" id="apply-loadout">APPLY CONFIGURATION</button>
+            <button class="secondary-button" id="cancel-loadout">RETURN</button>
           </div>
         </div>
         <div id="death-overlay" style="display:none">
@@ -119,6 +151,7 @@ export class Game {
     this.startOverlay = this.root.querySelector<HTMLDivElement>('#start-overlay')!;
     this.pauseOverlay = this.root.querySelector<HTMLDivElement>('#pause-overlay')!;
     this.deathOverlay = this.root.querySelector<HTMLDivElement>('#death-overlay')!;
+    this.loadoutOverlay = this.root.querySelector<HTMLDivElement>('#loadout-overlay')!;
   }
 
   private initializeEngine(): void {
@@ -198,9 +231,16 @@ export class Game {
     });
 
     this.renderer?.domElement.addEventListener('click', this.onCanvasClick);
+    this.root.querySelector<HTMLButtonElement>('#start-loadout')?.addEventListener('click', () => this.openLoadout('start'));
+    this.root.querySelector<HTMLButtonElement>('#pause-loadout')?.addEventListener('click', () => this.openLoadout('pause'));
+    this.root.querySelector<HTMLButtonElement>('#cancel-loadout')?.addEventListener('click', () => this.closeLoadout(false));
+    this.root.querySelector<HTMLButtonElement>('#apply-loadout')?.addEventListener('click', () => this.closeLoadout(true));
+    this.root.querySelector<HTMLSelectElement>('#loadout-weapon')?.addEventListener('change', this.onLoadoutWeaponChange);
     this.player?.controls.addEventListener('lock', this.onLock);
     this.player?.controls.addEventListener('unlock', this.onUnlock);
     window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('mouseup', this.onMouseUp);
+    window.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('keydown', this.onGameKeyDown);
   }
 
@@ -229,6 +269,9 @@ export class Game {
       this.physicsAccumulator = 0;
     }
 
+    const targetFov = this.isAiming ? 54 : 76;
+    this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 11);
+    this.camera.updateProjectionMatrix();
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -247,7 +290,74 @@ export class Game {
   };
 
   private onMouseDown = (event: MouseEvent): void => {
-    if (event.button === 0 && this.started && this.player?.controls.isLocked) this.weapon?.fire();
+    if (!this.started || !this.player?.controls.isLocked) return;
+    if (event.button === 2) {
+      this.isAiming = true;
+      this.weapon?.setAiming(true);
+      this.root.querySelector('#hud')?.classList.add('aiming');
+      event.preventDefault();
+    }
+    if (event.button === 0) {
+      this.weapon?.setTriggerHeld(true);
+      this.weapon?.fire();
+    }
+  };
+
+  private onMouseUp = (event: MouseEvent): void => {
+    if (event.button === 0) this.weapon?.setTriggerHeld(false);
+    if (event.button === 2) {
+      this.isAiming = false;
+      this.weapon?.setAiming(false);
+      this.root.querySelector('#hud')?.classList.remove('aiming');
+    }
+  };
+
+  private onContextMenu = (event: MouseEvent): void => { event.preventDefault(); };
+
+  private onLoadoutWeaponChange = (): void => {
+    const slot = Number(this.root.querySelector<HTMLSelectElement>('#loadout-weapon')?.value ?? 1);
+    const option = this.root.querySelector<HTMLInputElement>('#upgrade-full-auto');
+    const wrapper = this.root.querySelector<HTMLElement>('#full-auto-option');
+    if (slot === 3 && option) {
+      option.checked = false;
+      option.disabled = true;
+      wrapper?.classList.add('disabled');
+    } else if (option) {
+      option.disabled = false;
+      wrapper?.classList.remove('disabled');
+    }
+  };
+
+  private openLoadout(from: 'start' | 'pause'): void {
+    if (!this.weapon || !this.loadoutOverlay) return;
+    this.loadoutReturn = from;
+    const loadout = this.weapon.getLoadout();
+    (this.root.querySelector('#loadout-weapon') as HTMLSelectElement).value = String(loadout.slot);
+    (this.root.querySelector('#loadout-optic') as HTMLSelectElement).value = loadout.optic;
+    (this.root.querySelector('#loadout-capacitor') as HTMLSelectElement).value = loadout.capacitor;
+    (this.root.querySelector('#upgrade-stabilizer') as HTMLInputElement).checked = loadout.stabilizer;
+    (this.root.querySelector('#upgrade-full-auto') as HTMLInputElement).checked = loadout.fullAuto;
+    this.onLoadoutWeaponChange();
+    this.loadoutOverlay.style.display = 'grid';
+    if (from === 'start') this.startOverlay!.style.display = 'none';
+    else this.pauseOverlay!.style.display = 'none';
+  }
+
+  private closeLoadout(apply: boolean): void {
+    if (!this.loadoutOverlay || !this.weapon) return;
+    if (apply) {
+      const config: WeaponLoadout = {
+        slot: Number((this.root.querySelector('#loadout-weapon') as HTMLSelectElement).value),
+        optic: (this.root.querySelector('#loadout-optic') as HTMLSelectElement).value as WeaponLoadout['optic'],
+        capacitor: (this.root.querySelector('#loadout-capacitor') as HTMLSelectElement).value as WeaponLoadout['capacitor'],
+        stabilizer: (this.root.querySelector('#upgrade-stabilizer') as HTMLInputElement).checked,
+        fullAuto: (this.root.querySelector('#upgrade-full-auto') as HTMLInputElement).checked
+      };
+      this.weapon.applyLoadout(config);
+    }
+    this.loadoutOverlay.style.display = 'none';
+    if (this.loadoutReturn === 'start') this.startOverlay!.style.display = 'grid';
+    else this.pauseOverlay!.style.display = 'grid';
   };
 
   private onGameKeyDown = (event: KeyboardEvent): void => {
@@ -263,6 +373,10 @@ export class Game {
   };
 
   private onUnlock = (): void => {
+    this.isAiming = false;
+    this.weapon?.setAiming(false);
+    this.weapon?.setTriggerHeld(false);
+    this.root.querySelector('#hud')?.classList.remove('aiming');
     if (!this.started || this.disposed || !this.pauseOverlay || this.defeated) return;
     this.pauseOverlay.style.display = 'grid';
   };
