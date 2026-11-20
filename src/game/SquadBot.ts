@@ -35,7 +35,6 @@ export class SquadBot extends TrainingDrone {
     add(new THREE.BoxGeometry(0.2, 0.66, 0.24), armor, -0.2, -0.72, 0);
     add(new THREE.BoxGeometry(0.2, 0.66, 0.24), armor, 0.2, -0.72, 0);
     add(new THREE.BoxGeometry(0.34, 0.1, 0.46), edge, 0, -1.05, -0.025);
-    add(new THREE.BoxGeometry(0.34, 0.1, 0.46), edge, 0, -1.05, -0.025);
     this.group.position.y = 1.25;
   }
 
