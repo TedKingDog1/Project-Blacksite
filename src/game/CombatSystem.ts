@@ -11,6 +11,7 @@ interface EnergyPulse {
 interface CombatEvents {
   onHealthChanged: (health: number) => void;
   onToast: (message: string) => void;
+  onDefeated: () => void;
 }
 
 export class CombatSystem {
@@ -20,14 +21,12 @@ export class CombatSystem {
   private readonly events: CombatEvents;
   private readonly geometry = new THREE.SphereGeometry(0.17, 10, 8);
   private readonly material = new THREE.MeshStandardMaterial({
-    color: 0xffa66b,
-    emissive: 0xd94b19,
-    emissiveIntensity: 2.8,
-    roughness: 0.25
+    color: 0xffa66b, emissive: 0xd94b19, emissiveIntensity: 2.8, roughness: 0.25
   });
   private readonly pulses: EnergyPulse[] = [];
   private health = 100;
   private damageCooldown = 0;
+  private defeated = false;
 
   constructor(scene: THREE.Scene, player: Player, drones: TrainingDrone[], events: CombatEvents) {
     this.scene = scene;
@@ -38,29 +37,36 @@ export class CombatSystem {
   }
 
   update(delta: number): void {
+    if (this.defeated) return;
     this.damageCooldown = Math.max(0, this.damageCooldown - delta);
     const playerPosition = this.player.position;
-
     for (const drone of this.drones) {
       if (drone.shouldFire(delta, playerPosition)) this.launchPulse(drone.position, playerPosition);
     }
-
     for (let i = this.pulses.length - 1; i >= 0; i--) {
       const pulse = this.pulses[i];
       pulse.life -= delta;
       pulse.mesh.position.addScaledVector(pulse.velocity, delta);
-
       if (pulse.mesh.position.distanceTo(playerPosition) < 0.85) {
         this.removePulse(i);
         this.applyDamage();
-      } else if (pulse.life <= 0) {
-        this.removePulse(i);
-      }
+      } else if (pulse.life <= 0) this.removePulse(i);
     }
   }
 
+  respawn(): void {
+    this.clearPulses();
+    this.health = 100;
+    this.damageCooldown = 0;
+    this.defeated = false;
+    this.player.body.setTranslation({ x: 0, y: 1.5, z: 12 }, true);
+    this.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    this.events.onHealthChanged(this.health);
+    this.events.onToast('SIMULATION RESUMED');
+  }
+
   dispose(): void {
-    for (let i = this.pulses.length - 1; i >= 0; i--) this.removePulse(i);
+    this.clearPulses();
     this.geometry.dispose();
     this.material.dispose();
   }
@@ -76,20 +82,19 @@ export class CombatSystem {
   }
 
   private applyDamage(): void {
-    if (this.damageCooldown > 0) return;
+    if (this.damageCooldown > 0 || this.defeated) return;
     this.damageCooldown = 0.35;
     this.health = Math.max(0, this.health - 15);
     this.events.onHealthChanged(this.health);
-
     if (this.health === 0) {
-      this.health = 100;
-      this.player.body.setTranslation({ x: 0, y: 1.5, z: 12 }, true);
-      this.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      this.events.onHealthChanged(this.health);
-      this.events.onToast('SIMULATION RESET — RE-ENTERING RANGE');
-    } else {
-      this.events.onToast('SIMULATION HIT — VITALS ' + this.health + '%');
-    }
+      this.defeated = true;
+      this.clearPulses();
+      this.events.onDefeated();
+    } else this.events.onToast('SIMULATION HIT — VITALS ' + this.health + '%');
+  }
+
+  private clearPulses(): void {
+    for (let i = this.pulses.length - 1; i >= 0; i--) this.removePulse(i);
   }
 
   private removePulse(index: number): void {
