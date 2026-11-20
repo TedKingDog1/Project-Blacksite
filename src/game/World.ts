@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { addAtmosphericEffects, createSkyDome } from './Graphics';
 
@@ -48,7 +49,7 @@ function makeGrassTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-export function createWorld(physics: RAPIER.World): WorldResult {
+export async function createWorld(physics: RAPIER.World): Promise<WorldResult> {
   const scene = new THREE.Scene();
   scene.background = null;
   scene.fog = new THREE.Fog(0x9b9b91, 125, 285);
@@ -71,6 +72,64 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   sun.shadow.bias = -0.00025;
   scene.add(sun);
 
+  // Import the supplied GLB. Its exported node transform rotates the source XY
+  // grid onto the game's XZ ground plane.
+  const terrainGltf = await new GLTFLoader().loadAsync('/assets/terrain/Untitled-Project.glb');
+  const terrainRoot = terrainGltf.scene;
+  // After the GLB node transform, the terrain spans approximately X -15..165
+  // and Z -90..90. The raised ridge sits east of the mission route.
+  terrainRoot.position.set(83.948, 0, 0);
+  terrainRoot.scale.set(3, 1, 3);
+
+  const embeddedLights: THREE.Light[] = [];
+  const terrainMeshes: THREE.Mesh[] = [];
+  terrainRoot.traverse((object) => {
+    if (object instanceof THREE.Light) embeddedLights.push(object);
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      terrainMeshes.push(object);
+    }
+  });
+  embeddedLights.forEach((light) => light.parent?.remove(light));
+  scene.add(terrainRoot);
+  terrainRoot.updateMatrixWorld(true);
+
+  // Build the static collider from the exact transformed render geometry.
+  const colliderVertices: number[] = [];
+  const colliderIndices: number[] = [];
+  for (const mesh of terrainMeshes) {
+    const position = mesh.geometry.getAttribute('position');
+    const index = mesh.geometry.getIndex();
+    const vertexOffset = colliderVertices.length / 3;
+    const point = new THREE.Vector3();
+    for (let i = 0; i < position.count; i++) {
+      point.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+      colliderVertices.push(point.x, point.y, point.z);
+    }
+    if (index) {
+      for (let i = 0; i < index.count; i++) colliderIndices.push(index.getX(i) + vertexOffset);
+    } else {
+      for (let i = 0; i < position.count; i++) colliderIndices.push(i + vertexOffset);
+    }
+  }
+  physics.createCollider(
+    RAPIER.ColliderDesc.trimesh(
+      new Float32Array(colliderVertices),
+      new Uint32Array(colliderIndices)
+    ).setFriction(0.9)
+  );
+
+  // Raycast the imported surface when placing scenery so objects on slopes
+  // are raised to the same height as the visible terrain.
+  const terrainRaycaster = new THREE.Raycaster();
+  const terrainDown = new THREE.Vector3(0, -1, 0);
+  const groundHeight = (x: number, z: number): number => {
+    terrainRaycaster.set(new THREE.Vector3(x, 250, z), terrainDown);
+    const hit = terrainRaycaster.intersectObjects(terrainMeshes, false)[0];
+    return hit?.point.y ?? 0;
+  };
+
   const grassTexture = makeGrassTexture();
   const grass = new THREE.MeshStandardMaterial({
     color: 0xffffff, map: grassTexture, roughness: 1, metalness: 0
@@ -85,19 +144,22 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   const sandbag = new THREE.MeshStandardMaterial({ color: 0x9a8968, roughness: 1 });
   const darkMetal = new THREE.MeshStandardMaterial({ color: 0x343a37, metalness: 0.38, roughness: 0.78 });
 
+  // A slightly lower fallback floor catches movement beyond the GLB bounds.
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), grass);
   ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.04;
   ground.receiveShadow = true;
   scene.add(ground);
-  physics.createCollider(RAPIER.ColliderDesc.cuboid(150, 0.25, 150).setTranslation(0, -0.25, 0));
+  physics.createCollider(RAPIER.ColliderDesc.cuboid(150, 0.25, 150).setTranslation(0, -0.29, 0));
 
-  let colliders = 1;
+  let colliders = 2;
   const addBox = (
     x: number, y: number, z: number, sx: number, sy: number, sz: number,
     material: THREE.Material, collision = true, rotationY = 0
   ): THREE.Mesh => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
-    mesh.position.set(x, y, z);
+    const surfaceY = y + groundHeight(x, z);
+    mesh.position.set(x, surfaceY, z);
     mesh.rotation.y = rotationY;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -105,7 +167,7 @@ export function createWorld(physics: RAPIER.World): WorldResult {
     if (collision) {
       physics.createCollider(
         RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2)
-          .setTranslation(x, y, z)
+          .setTranslation(x, surfaceY, z)
           .setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) })
       );
       colliders++;
@@ -142,12 +204,13 @@ export function createWorld(physics: RAPIER.World): WorldResult {
       const mid = a.clone().add(b).multiplyScalar(0.5);
       const length = a.distanceTo(b);
       const segment = new THREE.Mesh(new THREE.BoxGeometry(width, 0.035, length), earth);
-      segment.position.set(mid.x, 0.018, mid.z);
+      const surfaceY = groundHeight(mid.x, mid.z);
+      segment.position.set(mid.x, surfaceY + 0.018, mid.z);
       segment.rotation.y = -Math.atan2(b.x - a.x, b.z - a.z);
       segment.receiveShadow = true;
       scene.add(segment);
       const rut = new THREE.Mesh(new THREE.BoxGeometry(width * 0.12, 0.012, length * 0.96), mud);
-      rut.position.set(mid.x - width * 0.25, 0.042, mid.z);
+      rut.position.set(mid.x - width * 0.25, surfaceY + 0.042, mid.z);
       rut.rotation.y = segment.rotation.y;
       scene.add(rut);
       const rut2 = rut.clone();
@@ -171,9 +234,10 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   // Farmhouses and outbuildings, placed around the perimeter of the playable valley.
   const addHouse = (x: number, z: number, scale = 1, ruined = false): void => {
     const w = 11 * scale, h = 5.2 * scale, d = 8 * scale;
+    const baseY = groundHeight(x, z);
     addBox(x, h / 2, z, w, h, d, ruined ? stone : plaster);
     const roof = new THREE.Mesh(new THREE.ConeGeometry(w * 0.78, 3.4 * scale, 4), roofMat);
-    roof.position.set(x, h + 1.55 * scale, z);
+    roof.position.set(x, baseY + h + 1.55 * scale, z);
     roof.rotation.y = Math.PI / 4;
     roof.scale.z = d / w;
     roof.castShadow = true;
@@ -185,7 +249,7 @@ export function createWorld(physics: RAPIER.World): WorldResult {
     addBox(x, 1.15 * scale, z + d / 2 + 0.045, 1.25 * scale, 2.3 * scale, 0.12, weatheredWood, false);
     if (ruined) {
       const rubble = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2 * scale, 0), stone);
-      rubble.position.set(x - 5 * scale, 0.55 * scale, z + 3 * scale);
+      rubble.position.set(x - 5 * scale, baseY + 0.55 * scale, z + 3 * scale);
       rubble.scale.set(2.2, 0.65, 1.3);
       rubble.rotation.y = 0.5;
       rubble.castShadow = true;
@@ -209,19 +273,19 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   const trenchMat = new THREE.MeshStandardMaterial({ color: 0x403a2d, roughness: 1 });
   for (const [x, z, length, angle] of [[-12, -40, 34, 0.12], [28, 35, 28, -0.22], [-58, 25, 22, 0.3]] as const) {
     const cut = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.12, length), trenchMat);
-    cut.position.set(x, 0.025, z);
+    cut.position.set(x, groundHeight(x, z) + 0.025, z);
     cut.rotation.y = angle;
     scene.add(cut);
     for (let i = -length / 2; i <= length / 2; i += 2.5) {
       const px = x + Math.sin(angle) * i;
       const pz = z + Math.cos(angle) * i;
       const timber = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.85, 1.8), weatheredWood);
-      timber.position.set(px - 1.25, 0.42, pz);
+      timber.position.set(px - 1.25, groundHeight(px - 1.25, pz) + 0.42, pz);
       timber.rotation.y = angle;
       timber.castShadow = true;
       scene.add(timber);
       const bag = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.48, 0.72), sandbag);
-      bag.position.set(px + 1.15, 0.28, pz);
+      bag.position.set(px + 1.15, groundHeight(px + 1.15, pz) + 0.28, pz);
       bag.rotation.y = angle + (i % 5) * 0.025;
       bag.castShadow = true;
       scene.add(bag);
@@ -232,7 +296,9 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   for (const [x, z, count, angle] of [[-23, 18, 5, 0.3], [22, 27, 6, -0.4], [48, -4, 4, 1.1], [-48, 8, 4, -0.8]] as const) {
     for (let i = 0; i < count; i++) {
       const bag = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.48, 0.72), sandbag);
-      bag.position.set(x + Math.cos(angle) * i * 1.05, 0.28, z + Math.sin(angle) * i * 1.05);
+      const bx = x + Math.cos(angle) * i * 1.05;
+      const bz = z + Math.sin(angle) * i * 1.05;
+      bag.position.set(bx, groundHeight(bx, bz) + 0.28, bz);
       bag.rotation.y = angle;
       bag.castShadow = true;
       scene.add(bag);
@@ -248,13 +314,14 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   for (const [x, z, radius] of [[-46, -2, 3.4], [45, 4, 4.1], [-4, -65, 3.2], [15, 61, 3.7], [70, -25, 2.8], [-72, 37, 3.1]] as const) {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.8, 7, 22), craterRim);
     rim.rotation.x = Math.PI / 2;
-    rim.position.set(x, 0.14, z);
+    const surfaceY = groundHeight(x, z);
+    rim.position.set(x, surfaceY + 0.14, z);
     rim.scale.set(1.35, 1, 0.78);
     rim.receiveShadow = true;
     scene.add(rim);
     const center = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.78, 20), mud);
     center.rotation.x = -Math.PI / 2;
-    center.position.set(x, 0.04, z);
+    center.position.set(x, surfaceY + 0.04, z);
     center.scale.set(1.35, 0.78, 1);
     scene.add(center);
   }
@@ -277,12 +344,13 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   }
   treePositions.forEach(([x, z], i) => {
     const height = 4.2 + rand() * 2.6;
+    const surfaceY = groundHeight(x, z);
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.32, height * 0.55, 6), trunkMat);
-    trunk.position.set(x, height * 0.275, z);
+    trunk.position.set(x, surfaceY + height * 0.275, z);
     trunk.castShadow = true;
     scene.add(trunk);
     const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2 + rand() * 1.4, 1), leafMats[i % leafMats.length]);
-    crown.position.set(x, height * 0.72, z);
+    crown.position.set(x, surfaceY + height * 0.72, z);
     crown.scale.set(1, 1.25, 0.95);
     crown.castShadow = true;
     scene.add(crown);
@@ -294,14 +362,16 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   for (let i = 0; i < 16; i++) {
     const x = -75 + i * 10;
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.6, 0.18), fencePostMat);
-    post.position.set(x, 0.8, 82 + Math.sin(i * 0.6) * 2);
+    const fenceZ = 82 + Math.sin(i * 0.6) * 2;
+    const fenceY = groundHeight(x, fenceZ);
+    post.position.set(x, fenceY + 0.8, fenceZ);
     post.castShadow = true;
     scene.add(post);
     if (i > 0) {
       const prevX = x - 10;
       for (const y of [0.55, 1.1]) {
         const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 10, 4), wireMat);
-        wire.position.set((x + prevX) / 2, y, 82 + Math.sin(i * 0.6) * 2);
+        wire.position.set((x + prevX) / 2, fenceY + y, fenceZ);
         wire.rotation.z = Math.PI / 2;
         scene.add(wire);
       }
@@ -312,12 +382,12 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   for (const [x, z] of [[-34, -12], [34, -12], [0, 48]] as const) {
     const clearing = new THREE.Mesh(new THREE.CircleGeometry(5.2, 32), earth);
     clearing.rotation.x = -Math.PI / 2;
-    clearing.position.set(x, 0.022, z);
+    clearing.position.set(x, groundHeight(x, z) + 0.022, z);
     clearing.receiveShadow = true;
     scene.add(clearing);
     const track = new THREE.Mesh(new THREE.RingGeometry(5.3, 5.55, 32), grass);
     track.rotation.x = -Math.PI / 2;
-    track.position.set(x, 0.03, z);
+    track.position.set(x, groundHeight(x, z) + 0.03, z);
     scene.add(track);
   }
 

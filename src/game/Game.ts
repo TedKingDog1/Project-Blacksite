@@ -54,7 +54,8 @@ export class Game {
       if (this.disposed) return;
       this.buildInterface();
       this.initializeEngine();
-      this.initializeWorld();
+      await this.initializeWorld();
+      if (this.disposed) return;
       this.initializeGameplay();
       this.hideLoading();
       this.bindEvents();
@@ -192,10 +193,11 @@ export class Game {
     viewport.appendChild(this.renderer.domElement);
   }
 
-  private initializeWorld(): void {
+  private async initializeWorld(): Promise<void> {
     this.physics = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     this.physics.timestep = 1 / 60;
-    const world = createWorld(this.physics);
+    const world = await createWorld(this.physics);
+    if (this.disposed) return;
     this.scene = world.scene;
   }
 
