@@ -114,7 +114,7 @@ export class Game {
             <div class="overlay-copy">The training complex is active. Movement, target acquisition, and equipment systems are online. Enter the range when ready.</div>
             <button class="action-button" id="start-button">ENTER TRAINING COMPLEX</button>
             <button class="secondary-button" id="start-loadout">CUSTOMIZE LOADOUT</button>
-            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 EQUIP · G GRENADE · Q ROCKET · R RECHARGE · ESC PAUSE</div>
+            <div class="controls-hint">WASD MOVE · MOUSE LOOK · SPACE JUMP<br>LEFT CLICK FIRE · RIGHT CLICK ADS · 1–3 PRIMARY · 4 RPG · 5 GRENADE LAUNCHER · G HAND GRENADE · R RECHARGE · ESC PAUSE</div>
           </div>
         </div>
         <div id="pause-overlay" style="display:none">
@@ -227,10 +227,11 @@ export class Game {
     this.ordnance = new Ordnance(this.scene, this.camera, this.drones, {
       onScore: (amount) => { this.score += amount; this.hud?.setScore(this.score); this.mission?.targetTagged(); },
       onToast: (message) => this.hud?.showToast(message),
-      onAmmo: (grenades, rockets) => {
+      onAmmo: (grenades, rockets, launcherRounds) => {
         const readout = this.root.querySelector<HTMLElement>('#ordnance-readout');
-        if (readout) readout.innerHTML = 'PULSE GRENADES ' + String(grenades).padStart(2, '0') + ' <span>//</span> ROCKET CELLS ' + String(rockets).padStart(2, '0');
-      }
+        if (readout) readout.innerHTML = 'HAND GRENADES ' + String(grenades).padStart(2, '0') + ' <span>//</span> RPG ' + String(rockets).padStart(2, '0') + ' <span>//</span> GL ' + String(launcherRounds).padStart(2, '0');
+      },
+      onWeapon: (name, note) => this.hud?.setWeapon(name, note)
     });
 
     this.combat = new CombatSystem(this.scene, this.player, this.drones, {
@@ -308,7 +309,7 @@ export class Game {
 
       this.player.syncCamera(this.camera);
       this.weapon?.update(delta);
-      this.ordnance?.update(delta);
+      this.ordnance?.update(delta, this.player.position);
       this.combat?.update(delta, 1 + (this.missionWave - 1) * 0.22);
       const playerPosition = this.player.position;
       const patrolPhase = (elapsed * 0.075) % (Math.PI * 2);
@@ -369,7 +370,7 @@ export class Game {
     }
     if (event.button === 0) {
       this.weapon?.setTriggerHeld(true);
-      this.weapon?.fire();
+      if (!this.ordnance?.fireSelected()) this.weapon?.fire();
     }
   };
 
@@ -436,9 +437,11 @@ export class Game {
     if (event.code === 'KeyR') this.weapon?.reload();
     if (event.code === 'KeyG') this.ordnance?.throwGrenade();
     if (event.code === 'KeyQ') this.ordnance?.launchRocket();
-    if (event.code === 'Digit1') this.weapon?.selectWeapon(1);
-    if (event.code === 'Digit2') this.weapon?.selectWeapon(2);
-    if (event.code === 'Digit3') this.weapon?.selectWeapon(3);
+    if (event.code === 'Digit1') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(1); }
+    if (event.code === 'Digit2') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(2); }
+    if (event.code === 'Digit3') { this.ordnance?.selectPrimary(); this.weapon?.selectWeapon(3); }
+    if (event.code === 'Digit4') this.ordnance?.selectRPG();
+    if (event.code === 'Digit5') this.ordnance?.selectGrenadeLauncher();
   };
 
   private onLock = (): void => {
