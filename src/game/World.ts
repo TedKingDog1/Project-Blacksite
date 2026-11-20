@@ -94,15 +94,20 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   let colliders = 1;
   const addBox = (
     x: number, y: number, z: number, sx: number, sy: number, sz: number,
-    material: THREE.Material, collision = true
+    material: THREE.Material, collision = true, rotationY = 0
   ): THREE.Mesh => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), material);
     mesh.position.set(x, y, z);
+    mesh.rotation.y = rotationY;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
     if (collision) {
-      physics.createCollider(RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2).setTranslation(x, y, z));
+      physics.createCollider(
+        RAPIER.ColliderDesc.cuboid(sx / 2, sy / 2, sz / 2)
+          .setTranslation(x, y, z)
+          .setRotation({ x: 0, y: Math.sin(rotationY / 2), z: 0, w: Math.cos(rotationY / 2) })
+      );
       colliders++;
     }
     return mesh;
@@ -197,8 +202,7 @@ export function createWorld(physics: RAPIER.World): WorldResult {
     [-56, -20, 24, 0], [-56, 2, 17, 0], [55, -18, 27, 0],
     [55, 8, 18, 0], [-30, 66, 26, Math.PI / 2], [28, 66, 22, Math.PI / 2]
   ] as const) {
-    const wall = addBox(x, 0.72, z, length, 1.35, 0.75, stone);
-    wall.rotation.y = angle;
+    addBox(x, 0.72, z, length, 1.35, 0.75, stone, true, angle);
   }
 
   // Shallow trench lines with timber revetments and sandbagged lips.
@@ -236,7 +240,7 @@ export function createWorld(physics: RAPIER.World): WorldResult {
   }
   for (const [x, z] of [[-43, -35], [44, -36], [-45, 48], [43, 48]] as const) {
     addBox(x, 0.65, z, 2.1, 1.3, 1.6, weatheredWood);
-    const lid = addBox(x, 1.34, z, 2.2, 0.12, 1.7, olive, false);
+    addBox(x, 1.34, z, 2.2, 0.12, 1.7, olive, false);
   }
 
   // Shell craters: flattened earthen bowls and dark, muddy centers.
