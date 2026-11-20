@@ -101,8 +101,8 @@ export class Ordnance {
     if (this.rocketCooldown > 0) return;
     this.rockets--; this.rocketCooldown = 0.8;
     const direction = this.camera.getWorldDirection(new THREE.Vector3());
-    const origin = this.camera.getWorldPosition(new THREE.Vector3()).addScaledVector(direction, 0.8)
-      .add(this.camera.getWorldRight(new THREE.Vector3()).multiplyScalar(-0.3));
+    const right = new THREE.Vector3().crossVectors(direction, this.camera.up).normalize();
+    const origin = this.camera.getWorldPosition(new THREE.Vector3()).addScaledVector(direction, 0.8).addScaledVector(right, -0.3);
     const mesh = new THREE.Group();
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.58, 10),
       new THREE.MeshStandardMaterial({ color: 0xb5bdba, metalness: 0.68, roughness: 0.32 }));
