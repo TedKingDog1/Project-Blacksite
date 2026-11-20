@@ -4,7 +4,7 @@ import { Input } from './Input';
 import { Player } from './Player';
 import { createWorld } from './World';
 import { TrainingDrone } from './Drone';
-import { PulseProjector, WeaponLoadout } from './Weapon';
+import { PulseProjector, type WeaponLoadout } from './Weapon';
 import { HUD } from './HUD';
 import { CombatSystem } from './CombatSystem';
 
